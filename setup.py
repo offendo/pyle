@@ -39,13 +39,13 @@ class CMakeBuildExt(build_ext):
 
 
 setup(
-    name="pyl",
+    name="pyle",
     version="0.1.0",
     author="Nilay Patel",
     author_email="nilaypatel2@gmail.com",
     description="Python bindings for a Lean 4 interpreter",
     long_description="Python bindings for a Lean 4 interpreter.",
-    ext_modules=[CMakeExtension("pyl", sourcedir=".")],
+    ext_modules=[CMakeExtension("pyle", sourcedir=".")],
     cmdclass={"build_ext": CMakeBuildExt},
     zip_safe=False,
     python_requires=">=3.8",

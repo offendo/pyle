@@ -22,7 +22,7 @@ extern "C" void lean_io_mark_end_initialization();
 extern "C" lean_object *run_lean_initialization();
 extern "C" lean_object *evaluate_from_state(lean_obj_arg, lean_obj_arg,
                                             lean_obj_arg);
-extern "C" lean_object *initialize_Pyl_Frontend(uint8_t builtin, lean_object *);
+extern "C" lean_object *initialize_Pyle_Frontend(uint8_t builtin, lean_object *);
 
 /* Destructor for lean_object. */
 void cleanup_lean_object(void *ptr) {
@@ -54,7 +54,7 @@ void initialize(){
     // use same default as for Lean executables
     uint8_t builtin = 1;
     lean_init_search_path(lean_io_mk_world());
-    lean_object *res = initialize_Pyl_Frontend(builtin, lean_io_mk_world());
+    lean_object *res = initialize_Pyle_Frontend(builtin, lean_io_mk_world());
     if (lean_io_result_is_ok(res)) {
       lean_dec_ref(res);
     } else {
@@ -111,7 +111,7 @@ const py::tuple evaluate(const std::string &lean_code,
   return py::make_tuple(msg_str, pack_lean_object(new_env));
 }
 
-PYBIND11_MODULE(pyl, m) {
+PYBIND11_MODULE(pyle, m) {
   initialize();
   m.def(
       "evaluate", &evaluate,

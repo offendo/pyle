@@ -1,5 +1,5 @@
-import Pyl.Lean.InfoTree
-import Pyl.Lean.ContextInfo
+import Pyle.Lean.InfoTree
+import Pyle.Lean.ContextInfo
 
 /-!
 # Exporting an `InfoTree` as Json

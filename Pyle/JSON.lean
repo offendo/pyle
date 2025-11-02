@@ -9,7 +9,7 @@ import Lean.Elab.InfoTree.Main
 
 open Lean Elab InfoTree
 
-namespace Pyl
+namespace Pyle
 structure CommandOptions where
   allTactics : Option Bool := none
   rootGoals : Option Bool := none
@@ -197,4 +197,4 @@ structure UnpickleProofState where
   env : Option Nat
 deriving ToJson, FromJson
 
-end Pyl
+end Pyle

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(pyl LANGUAGES C CXX)
+project(pyle LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 # —————————————
@@ -35,19 +35,19 @@ endif()
 set(LAKE_LIB_DIR "${CMAKE_SOURCE_DIR}/.lake/build/lib")
 
 # ——————————————————————————
-# 4) import the Pyl library
+# 4) import the Pyle library
 # ——————————————————————————
-find_library(PYLLIB
-  NAMES Pyl
+find_library(PYLELIB
+  NAMES Pyle
   PATHS ${LAKE_LIB_DIR}
   NO_DEFAULT_PATH
 )
-if (NOT PYLLIB)
-    message(FATAL_ERROR "Could not find libPyl in ${LAKE_LIB_DIR}")
+if (NOT PYLELIB)
+    message(FATAL_ERROR "Could not find libPyle in ${LAKE_LIB_DIR}")
 endif()
-add_library(Pyl UNKNOWN IMPORTED)
-set_target_properties(Pyl PROPERTIES
-  IMPORTED_LOCATION "${PYLLIB}"
+add_library(Pyle UNKNOWN IMPORTED)
+set_target_properties(Pyle PROPERTIES
+  IMPORTED_LOCATION "${PYLELIB}"
 )
 
 # ——————————————————————————————
@@ -71,16 +71,16 @@ endforeach()
 # —————————————————————
 # 6) the Python extension
 # —————————————————————
-pybind11_add_module(pyl
-  csrc/pyl.cpp
+pybind11_add_module(pyle
+  csrc/pyle.cpp
 )
 
-target_include_directories(pyl PRIVATE
+target_include_directories(pyle PRIVATE
   ${LEAN_INCLUDE_DIR}
 )
 
-target_link_libraries(pyl PRIVATE
-  Pyl
+target_link_libraries(pyle PRIVATE
+  Pyle
   Init_shared
   leanshared_1
   leanshared
@@ -88,7 +88,7 @@ target_link_libraries(pyl PRIVATE
 
 # Make sure pip/setuptools gets the file in the right place
 if (DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
-    set_target_properties(pyl PROPERTIES
+    set_target_properties(pyle PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
     )
 endif()
@@ -103,7 +103,7 @@ else()
     set(rpt "$ORIGIN")
 endif()
 
-set_target_properties(pyl PROPERTIES
+set_target_properties(pyle PROPERTIES
   CXX_STANDARD            17
 
   # embed the rpath into the *built* module (not only at install time)

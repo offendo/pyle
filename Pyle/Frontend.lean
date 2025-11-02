@@ -1,12 +1,12 @@
 import Lean.Elab.Frontend
-import Pyl.Timeout
-import Pyl.JSON
-import Pyl.Lean.InfoTree
-import Pyl.Lean.InfoTree.ToJson
-import Pyl.Lean.ContextInfo
-import Pyl.Util.Path
+import Pyle.Timeout
+import Pyle.JSON
+import Pyle.Lean.InfoTree
+import Pyle.Lean.InfoTree.ToJson
+import Pyle.Lean.ContextInfo
+import Pyle.Util.Path
 
-open Lean Elab Pyl
+open Lean Elab Pyle
 open Lean.Elab Json
 
 namespace Lean.Elab.IO
