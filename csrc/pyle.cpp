@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -7,6 +8,7 @@
 #include <pybind11/stl.h> // For std::optional
 #include <stdlib.h>
 #include <string>
+#include <vector>
 
 namespace py = pybind11;
 
@@ -18,11 +20,15 @@ extern "C" void lean_init_task_manager();
 extern "C" void lean_initialize_runtime_module();
 extern "C" void lean_io_mark_end_initialization();
 
-/* Lean evaluation code. */
+/* Exported Lean functions. */
 extern "C" lean_object *run_lean_initialization();
-extern "C" lean_object *evaluate_from_state(lean_obj_arg, lean_obj_arg,
-                                            lean_obj_arg);
-extern "C" lean_object *initialize_Pyle_Frontend(uint8_t builtin, lean_object *);
+extern "C" lean_object *evaluate(lean_obj_arg);
+extern "C" lean_object *evaluate_from_state(lean_obj_arg, lean_obj_arg);
+extern "C" lean_object *evaluate_with_timeout(lean_obj_arg, uint32_t);
+extern "C" lean_object *
+    evaluate_from_state_with_timeout(lean_obj_arg, lean_obj_arg, uint32_t);
+extern "C" lean_object *initialize_Pyle_Frontend(uint8_t builtin,
+                                                 lean_object *);
 
 /* Destructor for lean_object. */
 void cleanup_lean_object(void *ptr) {
@@ -41,87 +47,129 @@ py::capsule pack_lean_object(lean_object *obj) {
 }
 
 /* Unpack a py::capsule to get the contained lean_object pointer. */
-lean_object *unpack_lean_object(const py::capsule capsule) {
+lean_object *unpack_lean_object(const py::capsule &capsule) {
   lean_object *obj = static_cast<lean_object *>(
       PyCapsule_GetPointer(capsule.ptr(), "lean_object"));
   return obj;
 }
 
-/* Initializes the Lean FFI/interpreter. Essentially voodoo as far as I'm concerned. */
-void initialize(){
-    lean_initialize();
-    lean_initialize_runtime_module();
-    // use same default as for Lean executables
-    uint8_t builtin = 1;
-    lean_init_search_path(lean_io_mk_world());
-    lean_object *res = initialize_Pyle_Frontend(builtin, lean_io_mk_world());
-    if (lean_io_result_is_ok(res)) {
-      lean_dec_ref(res);
-    } else {
-      lean_io_result_show_error(res);
-      lean_dec(res);
-      std::cerr << "Error: could not initialize Lean!" << std::endl;
-      exit(1);
-    }
-    lean_init_task_manager();
-    lean_io_mark_end_initialization();
-    std::cout << "Successfully initialized Lean!" << std::endl;
+/* Initializes the Lean FFI/interpreter. Essentially voodoo as far as I'm
+ * concerned. */
+void initialize() {
+  lean_initialize();
+  lean_initialize_runtime_module();
+  // use same default as for Lean executables
+  uint8_t builtin = 1;
+  lean_init_search_path(lean_io_mk_world());
+  lean_object *res = initialize_Pyle_Frontend(builtin, lean_io_mk_world());
+  if (lean_io_result_is_ok(res)) {
+    lean_dec_ref(res);
+  } else {
+    lean_io_result_show_error(res);
+    lean_dec(res);
+    std::cerr << "Error: could not initialize Lean!" << std::endl;
+    exit(1);
+  }
+  lean_init_task_manager();
+  lean_io_mark_end_initialization();
 }
 
 /* Interface to evaluate Lean 4 code.
  */
-const py::tuple evaluate(const std::string &lean_code,
-                         std::optional<py::capsule> env, uint32_t timeout = 0) {
-
+const py::tuple
+evaluate_one(const std::string &lean_code,
+             std::optional<py::capsule> initial_state = std::nullopt,
+             uint32_t timeout = 0) {
   // Format the input
   lean_object *lean_input = lean_mk_string(lean_code.c_str());
 
-  // Initialize the optional arguments
-  lean_object *option_env;
-  lean_object *option_timeout;
-
-  // Fill in the optional env if provided, or init to none
-  if (env.has_value()) {
-    lean_object *env_obj = unpack_lean_object(env.value());
-    option_env = lean_alloc_ctor(1, 1, 0);
-    lean_ctor_set(option_env, 0, env_obj);
-  } else {
-    option_env = lean_alloc_ctor(0, 0, 0);
+  lean_object *result;
+  /* Four cases:
+   * =========== */
+  // 1. No state, no timeout
+  if (!initial_state.has_value() && timeout == 0) {
+    result = evaluate(lean_input);
   }
-
-  // Fill in the optional timouet if provided, or init to none
-  if (timeout > 0) {
-    option_timeout = lean_alloc_ctor(1, 1, 0);
-    lean_ctor_set(option_timeout, 0, lean_box(timeout));
-  } else {
-    option_timeout = lean_alloc_ctor(0, 0, 0);
+  // 2. Given state, no timeout
+  else if (initial_state.has_value() && timeout == 0) {
+    lean_object *env = unpack_lean_object(*initial_state);
+    result = evaluate_from_state(lean_input, env);
   }
-
-  // Run the evaluation
-  lean_object *result =
-      evaluate_from_state(lean_input, option_env, option_timeout);
+  // 3. No state, given timeout
+  else if (!initial_state.has_value() && timeout > 0) {
+    result = evaluate_with_timeout(lean_input, timeout);
+  }
+  // 4. Given state, given timeout
+  else {
+    lean_object *env = unpack_lean_object(*initial_state);
+    result =
+        evaluate_from_state_with_timeout(lean_input, env, timeout);
+  }
 
   // Extract out what we need from the result
   lean_object *obj = lean_ctor_get(result, 0);
   lean_object *new_env = lean_ctor_get(obj, 0);
   lean_object *msgs = lean_ctor_get(obj, 1);
+  lean_object *trees = lean_ctor_get(obj, 2);
+  lean_object *opt_error = lean_ctor_get(obj, 3);
+
+  // Format results
   const char *msg_str = lean_string_cstr(msgs);
+  const char *tree_str = lean_string_cstr(trees);
+  const char* error_str = lean_obj_tag(opt_error) == 1 ? lean_string_cstr(lean_ctor_get(opt_error, 0)) : NULL;
 
   // Return (messages, environment)
-  return py::make_tuple(msg_str, pack_lean_object(new_env));
+  return py::make_tuple(msg_str, tree_str, pack_lean_object(new_env), error_str);
+}
+
+/* Interface to evaluate Lean 4 code.
+ */
+const std::vector<const char *>
+evaluate_many(const std::vector<std::string> &lean_code,
+              py::capsule *initial_state, uint32_t timeout = 0) {
+
+  // Map the formatting function over the input strings
+  std::vector<lean_object *> lean_input{lean_code.size()};
+  std::transform(lean_code.begin(), lean_code.end(), lean_input.begin(),
+                 [](const std::string &lean_code) {
+                   return lean_mk_string(lean_code.c_str());
+                 });
+
+  // Run the evaluation by mapping the eval function over the input
+  std::vector<const char *> result{lean_code.size()};
+  lean_object *env = unpack_lean_object(*initial_state);
+  std::transform(lean_input.begin(), lean_input.end(), result.begin(),
+                 [env, initial_state, timeout](lean_object *input) {
+                   lean_object *res = evaluate_from_state_with_timeout(
+                       input, env, timeout);
+                   // Extract out what we need from the result
+                   lean_object *obj = lean_ctor_get(res, 0);
+                   lean_object *msgs = lean_ctor_get(obj, 1);
+                   const char *msg_str = lean_string_cstr(msgs);
+                   return msg_str;
+                 });
+
+  // Return (messages, environment)
+  return result;
 }
 
 PYBIND11_MODULE(pyle, m) {
   initialize();
   m.def(
-      "evaluate", &evaluate,
-      ("Compiles input lean code. Times out after `timeout` seconds.\n\n"
+      "evaluate", &evaluate_one,
+      ("Compiles input lean code. Times out after `timeout` ms.\n\n"
        "Arguments\n"
        "=========\n"
        "lean_code : str\n    String representation of lean code to process.\n"
-       "env : lean_object | None = None\n    Environment to run lean code in. "
+       "initial_state : lean_object | None = None\n    Environment to run lean "
+       "code in. "
        "Useful for keeping imports loaded in memory.\n"
-       "timeout : int | None = None\n    Maximum processing time in seconds."),
-      py::arg("lean_code"), py::arg("env") = py::none(),
-      py::arg("timeout") = py::none());
+       "timeout : int | None = None\n    Maximum processing time in ms.\n\n"
+       "Returns\n"
+       "=======\n"
+       "tuple[str, str, lean_object, str | None] :\n"
+       "    Tuple of (messages, info trees, new state, errors)"
+      ),
+      py::arg("lean_code"), py::arg("initial_state") = py::none(),
+      py::arg("timeout") = 0);
 }

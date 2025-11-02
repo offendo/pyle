@@ -11,8 +11,8 @@ def runWithTimeout
   do
     -- Launch a timer function to run in a separate thread
     let timerFunc: IO (β ⊕ IO.Error) := do
-        IO.sleep $ timeout * 1000
-        return Sum.inr $ IO.userError s!"error: lean server timeout after {timeout} seconds"
+        IO.sleep $ timeout
+        return Sum.inr $ IO.userError s!"error: lean server timeout after {timeout} milliseconds"
     let timer <- IO.asTask timerFunc
 
     -- Launch the main task
