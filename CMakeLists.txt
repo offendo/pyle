@@ -86,6 +86,13 @@ target_link_libraries(pyl PRIVATE
   leanshared
 )
 
+# Make sure pip/setuptools gets the file in the right place
+if (DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+    set_target_properties(pyl PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+    )
+endif()
+
 # ——————————————————————
 # 7) RPATH so runtime can find the .dylib/.so files
 # ——————————————————————

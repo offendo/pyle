@@ -22,7 +22,7 @@ class CMakeBuildExt(build_ext):
         build_temp = pathlib.Path(self.build_temp)
         build_temp.mkdir(parents=True, exist_ok=True)
 
-        print(f"🏗️  Building {ext.name} using CMake...")
+        print(f"🏗️  Building {ext.name} using CMake to {extdir}...")
 
         cmake_args = [
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}",
