@@ -78,35 +78,35 @@ void initialize() {
  */
 const py::tuple
 evaluate_one(const std::string &lean_code,
-             std::optional<py::capsule> initial_state = std::nullopt,
+             std::optional<py::capsule> initial_state_capsule = std::nullopt,
              uint32_t timeout = 0) {
   // Format the input
-  lean_object *lean_input = lean_mk_string(lean_code.c_str());
+  lean_object *boxed_lean_code = lean_mk_string(lean_code.c_str());
 
   lean_object *result;
   /* Four cases:
    * =========== */
   // 1. No state, no timeout
-  if (!initial_state.has_value() && timeout == 0) {
-    result = evaluate(lean_input);
+  if (!initial_state_capsule.has_value() && timeout == 0) {
+    result = evaluate(boxed_lean_code);
   }
   // 2. Given state, no timeout
-  else if (initial_state.has_value() && timeout == 0) {
-    lean_object *env = unpack_lean_object(*initial_state);
-    result = evaluate_from_state(lean_input, env);
+  else if (initial_state_capsule.has_value() && timeout == 0) {
+    lean_object *env = unpack_lean_object(*initial_state_capsule);
+    result = evaluate_from_state(boxed_lean_code, env);
   }
   // 3. No state, given timeout
-  else if (!initial_state.has_value() && timeout > 0) {
-    result = evaluate_with_timeout(lean_input, timeout);
+  else if (!initial_state_capsule.has_value() && timeout > 0) {
+    result = evaluate_with_timeout(boxed_lean_code, timeout);
   }
   // 4. Given state, given timeout
   else {
-    lean_object *env = unpack_lean_object(*initial_state);
+    lean_object *env = unpack_lean_object(*initial_state_capsule);
     result =
-        evaluate_from_state_with_timeout(lean_input, env, timeout);
+        evaluate_from_state_with_timeout(boxed_lean_code, env, timeout);
   }
 
-  // Extract out what we need from the result
+  // Unpack the output tuple
   lean_object *obj = lean_ctor_get(result, 0);
   lean_object *new_env = lean_ctor_get(obj, 0);
   lean_object *msgs = lean_ctor_get(obj, 1);

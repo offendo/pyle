@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.15)
 project(pyle LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
@@ -113,3 +113,8 @@ set_target_properties(pyle PROPERTIES
   # also install-time RPATH (if you ever do `make install`)
   INSTALL_RPATH           "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
 )
+
+# ——————————————————————
+# 8) Explicitly install
+# ——————————————————————
+install(TARGETS pyle DESTINATION .)

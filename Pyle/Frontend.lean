@@ -114,6 +114,7 @@ def evaluateWithTimeout
     let initialState := Command.mkState env messages opts
 
     let func := fun () => processCommandsWithInfoTrees inputCtx parserState initialState
+    IO.println s!"timeout: {timeout}"
     let (stateAfter, messages, trees, error) := (<- match (<-runWithTimeout func timeout) with
       | .inl (stateAfter, messages, trees) => return (stateAfter, messages, trees, none)
       | .inr err => return (initialState, [], [], some err.toString)

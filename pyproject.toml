@@ -1,0 +1,26 @@
+[build-system]
+requires = ["scikit-build-core>=0.7.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "pyle"
+version = "0.1.0"
+description = "Python bindings for a Lean 4 interpreter"
+readme = "README.md"
+authors = [
+    { name = "Nilay Patel", email = "nilaypatel2@gmail.com" },
+]
+requires-python = ">=3.8"
+license = { text = "MIT" }
+
+[project.urls]
+Homepage = "https://github.com/yourusername/pyle"
+Repository = "https://github.com/yourusername/pyle"
+
+[tool.scikit-build]
+wheel.expand-macos-universal-tags = true
+wheel.install-dir = "."
+
+[tool.scikit-build.cmake]
+source-dir = "."
+build-type = "Release"
