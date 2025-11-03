@@ -1,14 +1,83 @@
-name: Lean Action CI
+name: Build and upload wheels
 
 on:
   push:
-  pull_request:
+    tags:
+      - "v*" # e.g. v0.1.0
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-wheels:
+    name: Build wheels for Lean ${{ matrix.lean_version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        lean_version: ["v4.18.0", "v4.23.0", "v4.24.0"]
 
     steps:
       - uses: actions/checkout@v4
-      - uses: leanprover/lean-action@v1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install cibuildwheel
+        run: pip install cibuildwheel==2.*
+
+      - name: Build wheel
+        env:
+          LEAN_VERSION: ${{ matrix.lean_version }}
+          CIBW_BUILD_VERBOSITY: 1
+        run: |
+          python -m cibuildwheel --output-dir wheelhouse
+
+      - name: List wheels
+        run: ls -lh wheelhouse
+
+      - name: Upload wheels to workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.lean_version }}
+          path: wheelhouse/*.whl
+
+  merge-artifacts:
+    name: Merge all built wheels
+    runs-on: ubuntu-latest
+    needs: build-wheels
+    steps:
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: wheelhouse
+      - name: List all wheels
+        run: ls -lh wheelhouse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: all-wheels
+          path: wheelhouse/**/*.whl
+
+  upload-to-pypi:
+    name: Upload to PyPI
+    needs: merge-artifacts
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      id-token: write # for PyPI trusted publishing
+      contents: read # To access repository code
+    environment: pypi
+    steps:
+      - name: Download merged wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: all-wheels
+          path: wheelhouse
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheelhouse
