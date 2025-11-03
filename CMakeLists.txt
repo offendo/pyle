@@ -45,7 +45,7 @@ find_library(PYLELIB
 if (NOT PYLELIB)
     message(FATAL_ERROR "Could not find libPyle in ${LAKE_LIB_DIR}")
 endif()
-add_library(Pyle STATIC IMPORTED)
+add_library(Pyle UNKNOWN IMPORTED)
 set_target_properties(Pyle PROPERTIES
   IMPORTED_LOCATION "${PYLELIB}"
 )
@@ -62,10 +62,8 @@ foreach(libname IN ITEMS Init_shared leanshared_1 leanshared)
     if (NOT ${libname}_LIB)
         message(FATAL_ERROR "Could not find lib${libname} in ${LEAN_LIB_DIR}")
     endif()
-    add_library(${libname} STATIC IMPORTED)
-    set_target_properties(${libname} PROPERTIES
-    IMPORTED_LOCATION "${${libname}_LIB}"
-  )
+    add_library(${libname} UNKNOWN IMPORTED)
+    set_target_properties(${libname} PROPERTIES IMPORTED_LOCATION "${${libname}_LIB}")
 endforeach()
 
 # —————————————————————
@@ -96,9 +94,8 @@ endif()
 # ——————————————————————
 # 7) RPATH so runtime can find the .dylib/.so files
 # ——————————————————————
-# On macOS $ORIGIN in CMake maps to @loader_path
 if(APPLE)
-    set(rpt "$ORIGIN")
+    set(rpt "@loader_path")
 else()
     set(rpt "$ORIGIN")
 endif()
