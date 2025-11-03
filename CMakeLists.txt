@@ -5,7 +5,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # —————————————
 # 1) find pybind11
 # —————————————
-set(PYBIND11_FINDPYTHON, ON)
+set(PYBIND11_FINDPYTHON ON)
 find_package(pybind11 CONFIG REQUIRED)
 
 # —————————————
@@ -22,6 +22,10 @@ set(LEAN_LIB_DIR     "${LEAN_PREFIX}/lib/lean")
 # ————————————————————
 # 3) run lake build now
 # ————————————————————
+# Ensure CMake will use origin-style RPATH
+set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE) # avoid embedding absolute build paths
+
 execute_process(
   COMMAND lake --dir=${CMAKE_SOURCE_DIR} build
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -35,7 +39,7 @@ endif()
 set(LAKE_LIB_DIR "${CMAKE_SOURCE_DIR}/.lake/build/lib")
 
 # ——————————————————————————
-# 4) import the Pyle library
+# 4) import the Pyle shared library
 # ——————————————————————————
 find_library(PYLELIB
   NAMES Pyle
@@ -45,7 +49,7 @@ find_library(PYLELIB
 if (NOT PYLELIB)
     message(FATAL_ERROR "Could not find libPyle in ${LAKE_LIB_DIR}")
 endif()
-add_library(Pyle STATIC IMPORTED)
+add_library(Pyle SHARED IMPORTED)
 set_target_properties(Pyle PROPERTIES
   IMPORTED_LOCATION "${PYLELIB}"
 )
@@ -55,17 +59,17 @@ set_target_properties(Pyle PROPERTIES
 # ——————————————————————————————
 foreach(libname IN ITEMS Init_shared leanshared_1 leanshared)
     find_library(${libname}_LIB
-    NAMES ${libname}
-    PATHS ${LEAN_LIB_DIR}
-    NO_DEFAULT_PATH
-  )
+      NAMES ${libname}
+      PATHS ${LEAN_LIB_DIR}
+      NO_DEFAULT_PATH
+    )
     if (NOT ${libname}_LIB)
         message(FATAL_ERROR "Could not find lib${libname} in ${LEAN_LIB_DIR}")
     endif()
-    add_library(${libname} STATIC IMPORTED)
+    add_library(${libname} SHARED IMPORTED)
     set_target_properties(${libname} PROPERTIES
-    IMPORTED_LOCATION "${${libname}_LIB}"
-  )
+      IMPORTED_LOCATION "${${libname}_LIB}"
+    )
 endforeach()
 
 # —————————————————————
@@ -86,35 +90,34 @@ target_link_libraries(pyle PRIVATE
   leanshared
 )
 
-# Make sure pip/setuptools gets the file in the right place
-if (DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
-    set_target_properties(pyle PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
-    )
-endif()
+# —————————————————————
+# 7) bundle Lean .so into the Python package
+# —————————————————————
+set(PACKAGE_DIR ${CMAKE_CURRENT_BINARY_DIR}/pyle)
+add_custom_command(TARGET pyle POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${PACKAGE_DIR}
+  COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:pyle> ${PACKAGE_DIR}
+  COMMAND ${CMAKE_COMMAND} -E copy ${PYLELIB} ${PACKAGE_DIR}
+  COMMENT "Copying Python module and Lean library into package directory"
+)
 
 # ——————————————————————
-# 7) RPATH so runtime can find the .dylib/.so files
+# 8) RPATH so runtime can find the .so files
 # ——————————————————————
-# On macOS $ORIGIN in CMake maps to @loader_path
 if(APPLE)
-    set(rpt "$ORIGIN")
+    set(rpt "@loader_path")
 else()
     set(rpt "$ORIGIN")
 endif()
 
 set_target_properties(pyle PROPERTIES
   CXX_STANDARD            17
-
-  # embed the rpath into the *built* module (not only at install time)
   BUILD_WITH_INSTALL_RPATH ON
-  BUILD_RPATH             "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
-
-  # also install-time RPATH (if you ever do `make install`)
-  INSTALL_RPATH           "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
+  BUILD_RPATH             "${rpt};${LEAN_LIB_DIR};${PACKAGE_DIR}"
+  INSTALL_RPATH           "${rpt};${LEAN_LIB_DIR};${PACKAGE_DIR}"
 )
 
 # ——————————————————————
-# 8) Explicitly install
+# 9) Explicitly install
 # ——————————————————————
-install(TARGETS pyle DESTINATION .)
+install(DIRECTORY ${PACKAGE_DIR}/ DESTINATION .)
