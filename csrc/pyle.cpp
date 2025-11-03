@@ -155,6 +155,7 @@ evaluate_many(const std::vector<std::string> &lean_code,
 
 PYBIND11_MODULE(pyle, m) {
   initialize();
+  m.doc() = "Python interface for a Lean interpreter.",
   m.def(
       "evaluate", &evaluate_one,
       ("Compiles input lean code. Times out after `timeout` ms.\n\n"
