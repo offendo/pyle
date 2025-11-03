@@ -1,6 +1,10 @@
 [build-system]
-requires = ["scikit-build-core>=0.7.0"]
 build-backend = "scikit_build_core.build"
+requires = [
+  "scikit-build-core>=0.9",
+  "pybind11>=2.12",        # ensures Python + CMake integration
+  "setuptools>=68",
+]
 
 [project]
 name = "pyle"
@@ -18,6 +22,7 @@ Homepage = "https://github.com/yourusername/pyle"
 Repository = "https://github.com/yourusername/pyle"
 
 [tool.scikit-build]
+minimum-version = "0.9"
 wheel.expand-macos-universal-tags = true
 wheel.install-dir = "."
 

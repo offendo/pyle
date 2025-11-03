@@ -6,7 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # 1) find pybind11
 # —————————————
 set(PYBIND11_FINDPYTHON, ON)
-find_package(pybind11 REQUIRED)
+find_package(pybind11 CONFIG REQUIRED)
 
 # —————————————
 # 2) locate Lean sysroot
