@@ -2,6 +2,23 @@ cmake_minimum_required(VERSION 3.15)
 project(pyle LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
+# ======================================================
+# (NEW) Ensure linker marks binaries for $ORIGIN use
+# ======================================================
+add_link_options(-Wl,-z,origin)  # <-- NEW: tell linker to allow runtime $ORIGIN expansion
+
+# ======================================================
+# (NEW) Configure RPATH handling globally
+# ======================================================
+set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE) # avoid embedding absolute build paths
+
+if(APPLE)
+    set(_rpath_origin "@loader_path")
+else()
+    set(_rpath_origin "\$ORIGIN")  # escape $ for literal embedding
+endif()
+
 # —————————————
 # 1) find pybind11
 # —————————————
@@ -22,10 +39,6 @@ set(LEAN_LIB_DIR     "${LEAN_PREFIX}/lib/lean")
 # ————————————————————
 # 3) run lake build now
 # ————————————————————
-# Ensure CMake will use origin-style RPATH
-set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE) # avoid embedding absolute build paths
-
 execute_process(
   COMMAND lake --dir=${CMAKE_SOURCE_DIR} build
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -104,17 +117,11 @@ add_custom_command(TARGET pyle POST_BUILD
 # ——————————————————————
 # 8) RPATH so runtime can find the .so files
 # ——————————————————————
-if(APPLE)
-    set(rpt "@loader_path")
-else()
-    set(rpt "$ORIGIN")
-endif()
-
 set_target_properties(pyle PROPERTIES
-  CXX_STANDARD            17
+  CXX_STANDARD 17
   BUILD_WITH_INSTALL_RPATH ON
-  BUILD_RPATH             "${rpt};${LEAN_LIB_DIR};${PACKAGE_DIR}"
-  INSTALL_RPATH           "${rpt};${LEAN_LIB_DIR};${PACKAGE_DIR}"
+  BUILD_RPATH "${_rpath_origin}"
+  INSTALL_RPATH "${_rpath_origin}"
 )
 
 # ——————————————————————
