@@ -45,7 +45,7 @@ find_library(PYLELIB
 if (NOT PYLELIB)
     message(FATAL_ERROR "Could not find libPyle in ${LAKE_LIB_DIR}")
 endif()
-add_library(Pyle UNKNOWN IMPORTED)
+add_library(Pyle STATIC IMPORTED)
 set_target_properties(Pyle PROPERTIES
   IMPORTED_LOCATION "${PYLELIB}"
 )
@@ -62,7 +62,7 @@ foreach(libname IN ITEMS Init_shared leanshared_1 leanshared)
     if (NOT ${libname}_LIB)
         message(FATAL_ERROR "Could not find lib${libname} in ${LEAN_LIB_DIR}")
     endif()
-    add_library(${libname} UNKNOWN IMPORTED)
+    add_library(${libname} STATIC IMPORTED)
     set_target_properties(${libname} PROPERTIES
     IMPORTED_LOCATION "${${libname}_LIB}"
   )
