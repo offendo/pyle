@@ -45,6 +45,7 @@ find_library(PYLELIB
 if (NOT PYLELIB)
     message(FATAL_ERROR "Could not find libPyle in ${LAKE_LIB_DIR}")
 endif()
+
 add_library(Pyle SHARED IMPORTED)
 set_target_properties(Pyle PROPERTIES
   IMPORTED_LOCATION "${PYLELIB}"
@@ -86,19 +87,8 @@ target_link_libraries(pyle PRIVATE
   leanshared
 )
 
-# —————————————————————
-# 7) bundle Lean .so into the Python package
-# —————————————————————
-set(PACKAGE_DIR ${CMAKE_CURRENT_BINARY_DIR}/pyle)
-add_custom_command(TARGET pyle POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${PACKAGE_DIR}
-  COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:pyle> ${PACKAGE_DIR}
-  COMMAND ${CMAKE_COMMAND} -E copy ${PYLELIB} ${PACKAGE_DIR}
-  COMMENT "Copying Python module and Lean library into package directory"
-)
-
 # ——————————————————————
-# 8) RPATH so runtime can find the .so files
+# 7) RPATH so runtime can find the .so files
 # ——————————————————————
 if(APPLE)
     set(rpt "@loader_path")
@@ -114,6 +104,7 @@ set_target_properties(pyle PROPERTIES
 )
 
 # ——————————————————————
-# 9) Explicitly install
+# 8) Explicitly install
 # ——————————————————————
-install(DIRECTORY ${PACKAGE_DIR}/ DESTINATION .)
+install(TARGETS pyle DESTINATION .)
+install(FILES ${PYLELIB} DESTINATION .)

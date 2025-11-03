@@ -18,8 +18,8 @@ requires-python = ">=3.8"
 license = { text = "MIT" }
 
 [project.urls]
-Homepage = "https://github.com/yourusername/pyle"
-Repository = "https://github.com/yourusername/pyle"
+Homepage = "https://github.com/offendo/pyle"
+Repository = "https://github.com/offendo/pyle"
 
 [tool.scikit-build]
 minimum-version = "0.9"
