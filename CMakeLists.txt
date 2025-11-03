@@ -38,15 +38,14 @@ set(LAKE_LIB_DIR "${CMAKE_SOURCE_DIR}/.lake/build/lib")
 # 4) import the Pyle shared library
 # ——————————————————————————
 find_library(PYLELIB
-  NAMES Pyle
+  NAMES "libPyle.a.export"
   PATHS ${LAKE_LIB_DIR}
   NO_DEFAULT_PATH
 )
 if (NOT PYLELIB)
     message(FATAL_ERROR "Could not find libPyle in ${LAKE_LIB_DIR}")
 endif()
-
-add_library(Pyle SHARED IMPORTED)
+add_library(Pyle STATIC IMPORTED "libPyle.a.export")
 set_target_properties(Pyle PROPERTIES
   IMPORTED_LOCATION "${PYLELIB}"
 )
