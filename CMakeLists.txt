@@ -2,27 +2,10 @@ cmake_minimum_required(VERSION 3.15)
 project(pyle LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
-# ======================================================
-# (NEW) Ensure linker marks binaries for $ORIGIN use
-# ======================================================
-add_link_options(-Wl,-z,origin)  # <-- NEW: tell linker to allow runtime $ORIGIN expansion
-
-# ======================================================
-# (NEW) Configure RPATH handling globally
-# ======================================================
-set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE) # avoid embedding absolute build paths
-
-if(APPLE)
-    set(_rpath_origin "@loader_path")
-else()
-    set(_rpath_origin "\$ORIGIN")  # escape $ for literal embedding
-endif()
-
 # —————————————
 # 1) find pybind11
 # —————————————
-set(PYBIND11_FINDPYTHON ON)
+set(PYBIND11_FINDPYTHON, ON)
 find_package(pybind11 CONFIG REQUIRED)
 
 # —————————————
@@ -52,7 +35,7 @@ endif()
 set(LAKE_LIB_DIR "${CMAKE_SOURCE_DIR}/.lake/build/lib")
 
 # ——————————————————————————
-# 4) import the Pyle shared library
+# 4) import the Pyle library
 # ——————————————————————————
 find_library(PYLELIB
   NAMES Pyle
@@ -62,7 +45,7 @@ find_library(PYLELIB
 if (NOT PYLELIB)
     message(FATAL_ERROR "Could not find libPyle in ${LAKE_LIB_DIR}")
 endif()
-add_library(Pyle SHARED IMPORTED)
+add_library(Pyle STATIC IMPORTED)
 set_target_properties(Pyle PROPERTIES
   IMPORTED_LOCATION "${PYLELIB}"
 )
@@ -72,17 +55,17 @@ set_target_properties(Pyle PROPERTIES
 # ——————————————————————————————
 foreach(libname IN ITEMS Init_shared leanshared_1 leanshared)
     find_library(${libname}_LIB
-      NAMES ${libname}
-      PATHS ${LEAN_LIB_DIR}
-      NO_DEFAULT_PATH
-    )
+    NAMES ${libname}
+    PATHS ${LEAN_LIB_DIR}
+    NO_DEFAULT_PATH
+  )
     if (NOT ${libname}_LIB)
         message(FATAL_ERROR "Could not find lib${libname} in ${LEAN_LIB_DIR}")
     endif()
-    add_library(${libname} SHARED IMPORTED)
+    add_library(${libname} STATIC IMPORTED)
     set_target_properties(${libname} PROPERTIES
-      IMPORTED_LOCATION "${${libname}_LIB}"
-    )
+    IMPORTED_LOCATION "${${libname}_LIB}"
+  )
 endforeach()
 
 # —————————————————————
@@ -103,28 +86,35 @@ target_link_libraries(pyle PRIVATE
   leanshared
 )
 
-# —————————————————————
-# 7) bundle Lean .so into the Python package
-# —————————————————————
-set(PACKAGE_DIR ${CMAKE_CURRENT_BINARY_DIR}/pyle)
-add_custom_command(TARGET pyle POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${PACKAGE_DIR}
-  COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:pyle> ${PACKAGE_DIR}
-  COMMAND ${CMAKE_COMMAND} -E copy ${PYLELIB} ${PACKAGE_DIR}
-  COMMENT "Copying Python module and Lean library into package directory"
-)
+# Make sure pip/setuptools gets the file in the right place
+if (DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+    set_target_properties(pyle PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+    )
+endif()
 
 # ——————————————————————
-# 8) RPATH so runtime can find the .so files
+# 7) RPATH so runtime can find the .dylib/.so files
 # ——————————————————————
+# On macOS $ORIGIN in CMake maps to @loader_path
+if(APPLE)
+    set(rpt "$ORIGIN")
+else()
+    set(rpt "$ORIGIN")
+endif()
+
 set_target_properties(pyle PROPERTIES
-  CXX_STANDARD 17
+  CXX_STANDARD            17
+
+  # embed the rpath into the *built* module (not only at install time)
   BUILD_WITH_INSTALL_RPATH ON
-  BUILD_RPATH "${_rpath_origin}"
-  INSTALL_RPATH "${_rpath_origin}"
+  BUILD_RPATH             "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
+
+  # also install-time RPATH (if you ever do `make install`)
+  INSTALL_RPATH           "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
 )
 
 # ——————————————————————
-# 9) Explicitly install
+# 8) Explicitly install
 # ——————————————————————
-install(DIRECTORY ${PACKAGE_DIR}/ DESTINATION .)
+install(TARGETS pyle DESTINATION .)

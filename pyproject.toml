@@ -35,12 +35,3 @@ dev-dependencies = [
     "pytest>=8.4.2",
     "ipython>=9.6.0",
 ]
-
-[tool.cibuildwheel]
-xbuild-tools = ["cmake", "/Users/offendo/.elan/bin/lake"]
-build-verbosity = 3
-before-all = [
-  "curl https://elan.lean-lang.org/elan-init.sh -sSf | sh -s -- -y --default-toolchain leanprover/lean4:${LEAN_VERSION}",
-  "~/.elan/bin/elan toolchain install leanprover/lean4:${LEAN_VERSION}"
-  ]
-environment= { LEAN_VERSION = "v4.24.0", PATH="$PATH:$HOME/.elan/bin" }
