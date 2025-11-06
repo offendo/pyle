@@ -10,12 +10,59 @@
 #   universal: false
 
 -e file:.
+aiohappyeyeballs==2.6.1
+    # via aiohttp
+aiohttp==3.13.2
+    # via fsspec
+aiosignal==1.4.0
+    # via aiohttp
+anyio==4.11.0
+    # via httpx
 asttokens==3.0.0
     # via stack-data
+attrs==25.4.0
+    # via aiohttp
+certifi==2025.10.5
+    # via httpcore
+    # via httpx
+    # via requests
+charset-normalizer==3.4.4
+    # via requests
+click==8.3.0
+    # via typer-slim
+datasets==4.4.1
 decorator==5.2.1
     # via ipython
+dill==0.4.0
+    # via datasets
+    # via multiprocess
 executing==2.2.1
     # via stack-data
+filelock==3.20.0
+    # via datasets
+    # via huggingface-hub
+frozenlist==1.8.0
+    # via aiohttp
+    # via aiosignal
+fsspec==2025.10.0
+    # via datasets
+    # via huggingface-hub
+h11==0.16.0
+    # via httpcore
+hf-xet==1.2.0
+    # via huggingface-hub
+httpcore==1.0.9
+    # via httpx
+httpx==0.28.1
+    # via datasets
+    # via huggingface-hub
+huggingface-hub==1.1.1
+    # via datasets
+idna==3.11
+    # via anyio
+    # via httpx
+    # via requests
+    # via yarl
 iniconfig==2.3.0
     # via pytest
 ipython==9.6.0
@@ -25,8 +72,20 @@ jedi==0.19.2
     # via ipython
 matplotlib-inline==0.2.1
     # via ipython
+multidict==6.7.0
+    # via aiohttp
+    # via yarl
+multiprocess==0.70.18
+    # via datasets
+numpy==2.3.4
+    # via datasets
+    # via pandas
 packaging==25.0
+    # via datasets
+    # via huggingface-hub
     # via pytest
+pandas==2.3.3
+    # via datasets
 parso==0.8.5
     # via jedi
 pexpect==4.9.0
@@ -35,19 +94,55 @@ pluggy==1.6.0
     # via pytest
 prompt-toolkit==3.0.52
     # via ipython
+propcache==0.4.1
+    # via aiohttp
+    # via yarl
 ptyprocess==0.7.0
     # via pexpect
 pure-eval==0.2.3
     # via stack-data
+pyarrow==22.0.0
+    # via datasets
 pygments==2.19.2
     # via ipython
     # via ipython-pygments-lexers
     # via pytest
 pytest==8.4.2
+python-dateutil==2.9.0.post0
+    # via pandas
+pytz==2025.2
+    # via pandas
+pyyaml==6.0.3
+    # via datasets
+    # via huggingface-hub
+requests==2.32.5
+    # via datasets
+shellingham==1.5.4
+    # via huggingface-hub
+six==1.17.0
+    # via python-dateutil
+sniffio==1.3.1
+    # via anyio
 stack-data==0.6.3
     # via ipython
+tqdm==4.67.1
+    # via datasets
+    # via huggingface-hub
 traitlets==5.14.3
     # via ipython
     # via matplotlib-inline
+typer-slim==0.20.0
+    # via huggingface-hub
+typing-extensions==4.15.0
+    # via huggingface-hub
+    # via typer-slim
+tzdata==2025.2
+    # via pandas
+urllib3==2.5.0
+    # via requests
 wcwidth==0.2.14
     # via prompt-toolkit
+xxhash==3.6.0
+    # via datasets
+yarl==1.22.0
+    # via aiohttp

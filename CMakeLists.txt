@@ -58,10 +58,10 @@ endforeach()
 # 6) the Python extension
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 pybind11_add_module(pyle
-    csrc/module.cpp
-    csrc/capsule.cpp
-    csrc/initialize.cpp
-    csrc/evaluate.cpp
+    lib/module.cpp
+    lib/capsule.cpp
+    lib/initialize.cpp
+    lib/evaluate.cpp
 )
 
 target_include_directories(pyle PRIVATE
@@ -75,6 +75,11 @@ target_link_libraries(pyle PRIVATE
     leanshared_1
     leanshared
 )
+if (DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+    set_target_properties(pyle PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
+    )
+endif()
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 7) RPATH so runtime can find the .so files

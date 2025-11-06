@@ -28,10 +28,13 @@ wheel.install-dir = "."
 
 [tool.scikit-build.cmake]
 source-dir = "."
-build-type = "Release"
+build-type = "Debug"
 
 [tool.rye]
 dev-dependencies = [
     "pytest>=8.4.2",
     "ipython>=9.6.0",
+    "datasets>=4.4.1",
+    "pandas>=2.3.3",
+    "tqdm>=4.67.1",
 ]

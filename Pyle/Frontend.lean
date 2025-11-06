@@ -1,146 +1,82 @@
 import Lean.Elab.Frontend
 import Pyle.Timeout
-import Pyle.JSON
 import Pyle.Lean.InfoTree
 import Pyle.Lean.InfoTree.ToJson
-import Pyle.Lean.ContextInfo
 
-open Lean Elab Pyle
-open Lean.Elab Json
+open Lean Elab
 
 namespace Lean.Elab.IO
 
-@[export run_lean_initialization]
-def runLeanInitialization := unsafe do
-  Lean.initSearchPath (← Lean.findSysroot)
-  enableInitializersExecution
-
-
-/-- Wrapper around IO.processCommands to enable info tree output. -/
-def processCommandsWithInfoTrees
-      (inputCtx : Parser.InputContext)
-      (parserState : Parser.ModuleParserState)
-      (commandState : Command.State)
-      : IO (Command.State × List Message × List InfoTree) := do
-    let commandState := { commandState with infoState.enabled := true }
-    let s ← IO.processCommands inputCtx parserState commandState <&> Frontend.State.commandState
-    pure (s, s.messages.toList, s.infoState.trees.toList)
-
-/- Structure which contains state, output messages (JSON), and info tree (JSON).
--/
 structure EvalResponse where
   state : Command.State
   msgs : String
   tree : String
-  error : Option String
 
-  /-- Evaluates Lean 4 code given an optional input state, and returns a new state.
+/--
+Wrapper for `IO.processCommands` that enables info states, and returns
+* the new command state
+* messages
+* info trees
+-/
+def processCommandsWithInfoTrees
+    (inputCtx : Parser.InputContext) (parserState : Parser.ModuleParserState)
+    (commandState : Command.State) : IO (Command.State × List Message × List InfoTree) := do
+  let commandState := { commandState with infoState.enabled := true }
+  let s ← IO.processCommands inputCtx parserState commandState <&> Frontend.State.commandState
+  pure (s, s.messages.toList, s.infoState.trees.toList)
 
-  Arguments
-  =========
-  input : String
-    Input Lean 4 code to evaluate
-  initialState? : Option Command.State
-    Optional initial state for continued computation.
-  timeout? : Option UInt32
-    Optional timeout (in seconds), to limit Lean computation time.
+/--
+Process some text input, with or without an existing command state.
+If there is no existing environment, we parse the input for headers (e.g. import statements),
+and create a new environment.
+Otherwise, we add to the existing environment.
 
-  Returns
-  =======
-  IO EvalResponse :
-    Structure containing evaluation output and new command state.
-  -/
-
-
-@[export evaluate]
-def evaluate
-  (input : String)
-  : IO EvalResponse := do
-  let fileName   := "<input>"
+Returns:
+1. The header-only command state (only useful when cmdState? is none)
+2. The resulting command state after processing the entire input
+3. List of messages
+4. List of info trees
+-/
+def evaluate (input : String) (cmdState? : Option Command.State) (opts : Options := {}) (fileName : Option String := none) :
+    IO EvalResponse := unsafe do
+  Lean.initSearchPath (← Lean.findSysroot)
+  enableInitializersExecution
+  let fileName   := fileName.getD "<input>"
   let inputCtx   := Parser.mkInputContext input fileName
 
-  let opts : Options := {}
-  let (header, parserState, messages) ← Parser.parseHeader inputCtx
-  let (env, messages) ← processHeader header opts messages inputCtx
-  let initialState := Command.mkState env messages opts
-
-  let (stateAfter, messages, trees, error) <- (
-    try
-      let (stateAfter, messages, trees) <- processCommandsWithInfoTrees inputCtx parserState initialState
-      return (stateAfter, messages, trees, none)
-    catch err =>
-      return (initialState, [], [], some err.toString)
-  )
-
-  /- Finally, return a parsed output -/
-  let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
-  let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
-  return ⟨stateAfter, toString msgs, toString tree, error⟩
-
-@[export evaluate_from_state]
-def evaluateFromState
-  (input : String)
-  (initialState : Command.State)
-  : IO EvalResponse := do
-  let fileName   := "<input>"
-  let inputCtx   := Parser.mkInputContext input fileName
-
-  let parserState : Parser.ModuleParserState := {}
-  let (stateAfter, messages, trees, error) <- (
-    try
-      let (stateAfter, messages, trees) <- processCommandsWithInfoTrees inputCtx parserState initialState
-      return (stateAfter, messages, trees, none)
-    catch err =>
-      return (initialState, [], [], some err.toString)
-  )
-
-  /- Finally, return a parsed output -/
-  let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
-  let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
-  return ⟨stateAfter, toString msgs, toString tree, error⟩
-
-@[export evaluate_with_timeout]
-def evaluateWithTimeout
-    (input : String)
-    (timeout : UInt32)
-    : IO EvalResponse := unsafe do
-
-    let fileName   := "<input>"
-    let inputCtx   := Parser.mkInputContext input fileName
-
-    let opts : Options := {}
+  match cmdState? with
+  | none => do
+    -- Split the processing into two phases to prevent self-reference in proofs in tactic mode
     let (header, parserState, messages) ← Parser.parseHeader inputCtx
-    let (env, messages) ← processHeader header opts messages inputCtx
-    let initialState := Command.mkState env messages opts
-
-    let func := fun () => processCommandsWithInfoTrees inputCtx parserState initialState
-    IO.println s!"timeout: {timeout}"
-    let (stateAfter, messages, trees, error) := (<- match (<-runWithTimeout func timeout) with
-      | .inl (stateAfter, messages, trees) => return (stateAfter, messages, trees, none)
-      | .inr err => return (initialState, [], [], some err.toString)
-    )
-    /- Finally, return a parsed output -/
+    let (env, messages) ← processHeader header opts messages inputCtx (leakEnv := false)
+    let headerOnlyState := Command.mkState env messages opts
+    let (cmdState, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState headerOnlyState
+    -- return results
     let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
     let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
-    return ⟨stateAfter, toString msgs, toString tree, error⟩
+    return ⟨cmdState, toString msgs, toString tree⟩
 
-@[export evaluate_from_state_with_timeout]
-def evaluateFromStateWithTimeout
-  (input : String)
-  (initialState : Command.State)
-  (timeout : UInt32)
-  : IO EvalResponse := unsafe do
+  | some cmdStateBefore => do
+    let parserState : Parser.ModuleParserState := {}
+    let (cmdStateAfter, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState cmdStateBefore
+    let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
+    let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
+    return ⟨cmdStateAfter, toString msgs, toString tree⟩
 
-  let fileName   := "<input>"
-  let inputCtx   := Parser.mkInputContext input fileName
-
-  let parserState : Parser.ModuleParserState := {}
-  let func := fun () => processCommandsWithInfoTrees inputCtx parserState initialState
-  let (stateAfter, messages, trees, error) := (<- match (<-runWithTimeout func timeout) with
-    | .inl (stateAfter, messages, trees) => return (stateAfter, messages, trees, none)
-    | .inr err => return (initialState, [], [], some err.toString)
-  )
-  /- Finally, return a parsed output -/
-  let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
-  let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
-  return ⟨stateAfter, toString msgs, toString tree, error⟩
+@[export lean_evaluate]
+def evaluate_with_timeout (input : String) (cmdState? : Option Command.State) (timeout : UInt32 := 0):
+    IO (Except String EvalResponse) := do
+    let opts : Options := {}
+    let fileName : Option String := none
+    -- Only call the timeout thread if we need to.
+    if (timeout <= 0) then
+      let output <- evaluate input cmdState? opts fileName
+      return (.ok output)
+    else
+      let func := fun () => evaluate input cmdState? opts fileName
+      let result <- runWithTimeout func timeout Task.Priority.dedicated
+      match result with
+        | .ok val => do
+          return (.ok val)
+        | .error err => do
+          return (.error err.toString)
