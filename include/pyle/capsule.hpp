@@ -1,7 +1,8 @@
 #pragma once
 
-#include <pybind11/pybind11.h>
+#include "pyle/cache.hpp"
 #include <lean/lean.h>
+#include <pybind11/pybind11.h>
 
 namespace pyle {
 
@@ -14,4 +15,6 @@ pybind11::capsule pack_lean_object(lean_object *obj);
 // Unpack the lean_object* out of a py::capsule
 lean_object *unpack_lean_object(const pybind11::capsule &capsule);
 
+// Unpack the cache
+std::unique_ptr<Cache> unpack_cache(const pybind11::capsule &capsule);
 } // namespace pyle

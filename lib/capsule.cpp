@@ -22,4 +22,19 @@ lean_object *unpack_lean_object(const pybind11::capsule &capsule) {
   return obj;
 }
 
+void cleanup_cache(void *ptr) { static_cast<Cache *>(ptr)->erase_all(); }
+
+Cache *pack_cache(Cache *cache) {
+  // TODO increment the refs of all the objects in the capsule
+  return pybind11::capsule(cache, "Cache", [](PyObject *capsule) {
+    cleanup_cache(PyCapsule_GetPointer(capsule, "Cache"));
+  });
+}
+
+std::unique_ptr<Cache> unpack_cache(const pybind11::capsule &capsule) {
+  Cache *cache =
+    static_cast<Cache *>(PyCapsule_GetPointer(capsule.ptr(), "Cache"));
+  return std::unique_ptr<Cache>(cache);
+}
+
 } // namespace pyle
