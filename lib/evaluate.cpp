@@ -14,14 +14,18 @@
 #include <memory>
 #include <optional>
 #include <pyerrors.h>
+#include <sstream>
+#include <stdio.h>
 #include <string>
 
 using namespace std::chrono;
 using namespace indicators;
-using result_t = std::tuple<std::string, std::string, std::string, long long>;
+using result_t =
+  std::tuple<std::string, std::string, std::string, std::string, long long>;
 
 namespace py = pybind11;
 
+/* Creates a progress bar with some default settings. */
 std::unique_ptr<ProgressBar> make_progress_bar() {
   return std::unique_ptr<ProgressBar>(new ProgressBar{
     option::BarWidth{80},
@@ -66,7 +70,7 @@ lean_obj_res evaluate_one(
   return out;
 }
 
-std::tuple<std::string, std::string, std::string, lean_object *>
+std::tuple<std::string, std::string, std::string, std::string, lean_object *>
 parse_lean_output(b_lean_obj_arg lean_response) {
   // note that we return an Except object, so we have to dig one value in to
   // grab the internals before we can parse the output.
@@ -76,7 +80,7 @@ parse_lean_output(b_lean_obj_arg lean_response) {
   // This is mostly going to happen if Lean times out.
   if (lean_obj_tag(except_obj) == 0) {
     std::string err = lean_string_cstr(lean_ctor_get(except_obj, 0));
-    return std::make_tuple("", "", err, nullptr);
+    return std::make_tuple("", "", err, "", nullptr);
   }
 
   // Otherwise, we got a real result back and we can parse the output.
@@ -84,10 +88,12 @@ parse_lean_output(b_lean_obj_arg lean_response) {
   lean_object *new_state = lean_ctor_get(result, 0);
   lean_object *msgs = lean_ctor_get(result, 1);
   lean_object *trees = lean_ctor_get(result, 2);
+  lean_object *tactics = lean_ctor_get(result, 3);
 
   std::string msg_str = lean_string_cstr(msgs);
   std::string tree_str = lean_string_cstr(trees);
-  return std::make_tuple(msg_str, tree_str, "", new_state);
+  std::string tac_str = lean_string_cstr(tactics);
+  return std::make_tuple(msg_str, tree_str, "", tac_str, new_state);
 }
 
 py::tuple py_evaluate(
@@ -111,7 +117,7 @@ py::tuple py_evaluate(
   auto stop = high_resolution_clock::now();
   auto duration = duration_cast<milliseconds>(stop - start).count();
 
-  auto [msgs, tree, err, new_state] = parse_lean_output(lean_response);
+  auto [msgs, tree, err, tacs, new_state] = parse_lean_output(lean_response);
 
   // This step is a little subtlely weird. We call lean_inc to on the
   // new_state to increment the ref count. Then we call
@@ -125,7 +131,7 @@ py::tuple py_evaluate(
   if (lean_response) {
     lean_dec(lean_response);
   }
-  return py::make_tuple(msgs, tree, err, duration, return_capsule);
+  return py::make_tuple(msgs, tree, err, tacs, duration, return_capsule);
 }
 
 py::tuple py_evaluate_many(
@@ -142,6 +148,7 @@ py::tuple py_evaluate_many(
   std::vector<result_t> results(lean_code.size());
 
   ThreadPool pool(std::thread::hardware_concurrency());
+  std::stringstream ss;
 
   std::vector<int> task_ids;
   for (std::string &thm : lean_code) {
@@ -154,12 +161,12 @@ py::tuple py_evaluate_many(
         lean_object *header_response = evaluate_one(header, nullptr, 0);
 
         // Parse the output.
-        auto [m, t, err, header_state] = parse_lean_output(header_response);
+        auto [m, t, err, ts, header_state] = parse_lean_output(header_response);
 
         // If we errored on this header, we need to count this thm as failure
         // Make sure to 'continue' to skip the rest of the loop.
         if (!err.empty()) {
-          return result_t{"", "", err, 0};
+          return result_t{"", "", err, "", 0};
         }
 
         // Otherwise, store the (header,state) in the cache!
@@ -185,7 +192,8 @@ py::tuple py_evaluate_many(
       auto duration = duration_cast<milliseconds>(stop - start).count();
 
       // Parse the output.
-      auto [msgs, tree, err, thm_state] = parse_lean_output(lean_response);
+      auto [msgs, tree, err, tactics, thm_state] =
+        parse_lean_output(lean_response);
 
       // **IMPORTANT**: This lean_dec will delete thm_state! Which is good
       // because we don't want it - it'll just eat up memory. In the future,
@@ -197,7 +205,7 @@ py::tuple py_evaluate_many(
         lean_dec(lean_response);
       }
       lean_finalize_thread();
-      return result_t{msgs, tree, err, duration};
+      return result_t{msgs, tree, err, tactics, duration};
     };
     int task_id = pool.enqueue(lambda_fn, thm);
     task_ids.push_back(task_id);
@@ -206,9 +214,8 @@ py::tuple py_evaluate_many(
   // Now that we've got all the tasks enqueued, let's start waiting
   // TODO add progress bar
   std::unique_ptr<ProgressBar> pbar = make_progress_bar();
-  int complete = 0;
   show_console_cursor(false);
-  for (int i = 0; i < task_ids.size(); i++) {
+  for (int i = 1; i < 1 + task_ids.size(); i++) {
     // make sure ctrl-c works, at least partially. Not perfect solution but
     // it'll kill the main process. The threads will keep going so we need to
     // shut them down. IDK if pool.shutdown() will take care of it because the
@@ -227,8 +234,14 @@ py::tuple py_evaluate_many(
     ThreadPool::CompletedTask val = res.value();
     result_t &result = val.value<result_t>();
     results[val.id] = result;
-    complete++;
-    pbar->set_progress(100 * complete / results.size());
+    pbar->set_progress(100 * i / results.size());
+
+    // Format a postfix string
+    ss << "(" << i << "/" << results.size() << ")";
+    pbar->set_option(option::PostfixText{ss.str()});
+    // empty out the sstream
+    ss.str("");
+    ss.clear();
   }
   show_console_cursor(true);
 

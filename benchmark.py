@@ -20,7 +20,7 @@ def parse_header(theorem: str):
 
 
 if __name__ == "__main__":
-    dataset = load_dataset("Goedel-LM/Lean-workbook-proofs", split="train", num_proc=1).select(range(100))
+    dataset = load_dataset("Goedel-LM/Lean-workbook-proofs", split="train", num_proc=1).select(range(50))
     dataset = dataset['full_proof']
     # dataset = pd.read_json("benchmark.json")["full_theorem"]
 
@@ -34,15 +34,15 @@ if __name__ == "__main__":
     output, state_cache = pyle.evaluate_many(list(dataset), state_cache, timeout=20_000)
 
     # Parse output
-    for problem, (msgs, trees, err, duration) in zip(problems, output):
+    for problem, (msgs, trees, err, tactics, duration) in zip(problems, output):
         header, body = parse_header(problem)
-        results.append((problem, header, body, msgs, trees, err, duration))
+        results.append((problem, header, body, msgs, trees, tactics, err, duration))
 
 
     end = time.time()
     df = pd.DataFrame.from_records(
         results,
-        columns=["full_theorem", "header", "body", "messages", "trees", "errors", "time"],
+        columns=["full_theorem", "header", "body", "messages", "trees", "tactics", "errors", "time"],
     )
     print(df, flush=True)
     errs = df.apply(

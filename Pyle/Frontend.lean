@@ -2,15 +2,34 @@ import Lean.Elab.Frontend
 import Pyle.Timeout
 import Pyle.Lean.InfoTree
 import Pyle.Lean.InfoTree.ToJson
+import Pyle.JSON
 
 open Lean Elab
+open Pyle
 
 namespace Lean.Elab.IO
 
 structure EvalResponse where
   state : Command.State
-  msgs : String
+  messages : String
   tree : String
+  tactics : String
+
+
+def ppTactic (ctx : ContextInfo) (stx : Syntax) : IO Format :=
+  ctx.runMetaM {} try
+    Lean.PrettyPrinter.ppTactic ⟨stx⟩
+  catch _ =>
+    pure "<failed to pretty print>"
+
+def tactics (trees : List InfoTree) : IO (List Tactic) :=
+  trees.flatMap InfoTree.tactics |>.mapM
+    fun ⟨ctx, stx, rootGoals, goals, pos, endPos, ns⟩ => do
+      -- let proofState := some (← ProofSnapshot.create ctx none env? goals rootGoals)
+      let goals := s!"{(← ctx.ppGoals goals)}".trim
+      let tactic := Format.pretty (← ppTactic ctx stx)
+      --let proofStateId ← proofState.mapM recordProofSnapshot
+      return Tactic.of goals tactic pos endPos none ns
 
 /--
 Wrapper for `IO.processCommands` that enables info states, and returns
@@ -37,8 +56,9 @@ Returns:
 3. List of messages
 4. List of info trees
 -/
-def evaluate (input : String) (cmdState? : Option Command.State) (opts : Options := {}) (fileName : Option String := none) :
-    IO EvalResponse := unsafe do
+
+def evaluate (input : String) (cmdState? : Option Command.State) (opts : Options := {}) (fileName : Option String := none)
+  : IO EvalResponse := unsafe do
   Lean.initSearchPath (← Lean.findSysroot)
   enableInitializersExecution
   let fileName   := fileName.getD "<input>"
@@ -51,17 +71,19 @@ def evaluate (input : String) (cmdState? : Option Command.State) (opts : Options
     let (env, messages) ← processHeader header opts messages inputCtx (leakEnv := false)
     let headerOnlyState := Command.mkState env messages opts
     let (cmdState, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState headerOnlyState
-    -- return results
-    let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
-    let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
-    return ⟨cmdState, toString msgs, toString tree⟩
-
+    let jsontree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
+    let jsonmsgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
+    let tacs <- tactics trees
+    let jsontactics := Json.arr (tacs.toArray.map fun m => toJson m)
+    return ⟨cmdState, toString jsonmsgs, toString jsontree, toString jsontactics⟩
   | some cmdStateBefore => do
     let parserState : Parser.ModuleParserState := {}
     let (cmdStateAfter, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState cmdStateBefore
     let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
     let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
-    return ⟨cmdStateAfter, toString msgs, toString tree⟩
+    let tacs <- tactics trees
+    let jsontactics := Json.arr (tacs.toArray.map fun m => toJson m)
+    return ⟨cmdStateAfter, toString msgs, toString tree, toString jsontactics⟩
 
 @[export lean_evaluate]
 def evaluate_with_timeout (input : String) (cmdState? : Option Command.State) (timeout : UInt32 := 0):
@@ -94,7 +116,7 @@ def collate (input : List (Except IO.Error EvalResponse)) : List (Except String 
       | .ok val => .ok val
 
 @[export lean_evaluate_batch]
-def evaluate_batch (inputs : List String) (cmdState? : Option Command.State) (timeout : UInt32 := 0):
+def evaluate_batch (inputs : List String) (cmdState? : Option Command.State) :
     IO (List (Except String EvalResponse)) := do
     let opts : Options := {}
     let fileName : Option String := none

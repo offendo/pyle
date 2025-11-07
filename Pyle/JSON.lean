@@ -10,6 +10,7 @@ import Lean.Elab.InfoTree.Main
 open Lean Elab InfoTree
 
 namespace Pyle
+
 structure CommandOptions where
   allTactics : Option Bool := none
   rootGoals : Option Bool := none
@@ -29,12 +30,14 @@ structure Command extends CommandOptions where
   cmd : String
   keepEnv: Option Bool := some true
   ignoreProofs : Option Bool := some false
-deriving FromJson, ToJson
 
-/-- Process a Lean file in a fresh environment. -/
+deriving ToJson, FromJson
+
+/-- Process a Lean file in a fresh environment if `env` is not provided. -/
 structure File extends CommandOptions where
+  env : Option Nat
   path : System.FilePath
-deriving FromJson
+deriving ToJson, FromJson
 
 /--
 Run a tactic in a proof state.
@@ -129,13 +132,6 @@ structure CommandResponse where
   tactics : List Tactic := []
   infotree : Option Json := none
 deriving FromJson
-
-structure PyCommandResponse where
-  messages : List Message := []
-  sorries : List Sorry := []
-  tactics : List Tactic := []
-  infotree : Option Json := none
-deriving FromJson, ToJson
 
 def Json.nonemptyList [ToJson α] (k : String) : List α → List (String × Json)
   | [] => []
