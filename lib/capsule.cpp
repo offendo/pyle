@@ -10,7 +10,6 @@ void cleanup_lean_object(void *ptr) {
 }
 
 pybind11::capsule pack_lean_object(lean_object *obj) {
-  lean_inc(obj);
   return pybind11::capsule(obj, "lean_object", [](PyObject *capsule) {
     cleanup_lean_object(PyCapsule_GetPointer(capsule, "lean_object"));
   });
@@ -19,7 +18,6 @@ pybind11::capsule pack_lean_object(lean_object *obj) {
 lean_object *unpack_lean_object(const pybind11::capsule &capsule) {
   lean_object *obj = static_cast<lean_object *>(
     PyCapsule_GetPointer(capsule.ptr(), "lean_object"));
-  lean_inc(obj);
   return obj;
 }
 
@@ -28,6 +26,7 @@ lean_object *unpack_lean_object(const pybind11::capsule &capsule) {
 pybind11::capsule pack_cache(Cache *cache) {
   // TODO increment the refs of all the objects in the capsule
   return pybind11::capsule(cache, "Cache", [](PyObject *capsule) {
+    // This will ruin everything so don't call cleanup here.
     // cleanup_cache(PyCapsule_GetPointer(capsule, "Cache"));
   });
 }

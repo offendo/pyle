@@ -1,20 +1,42 @@
 #include "pyle/evaluate.hpp"
+#include "indicators/cursor_control.hpp"
+#include "indicators/progress_bar.hpp"
+#include "indicators/setting.hpp"
 #include "lean/lean.h"
 #include "pyle/cache.hpp"
 #include "pyle/capsule.hpp"
 #include "pyle/lean.hpp"
 #include "pyle/tpool.hpp"
 #include "pyle/utils.hpp"
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <pyerrors.h>
 #include <string>
 
 using namespace std::chrono;
+using namespace indicators;
 using result_t = std::tuple<std::string, std::string, std::string, long long>;
 
 namespace py = pybind11;
+
+std::unique_ptr<ProgressBar> make_progress_bar() {
+  return std::unique_ptr<ProgressBar>(new ProgressBar{
+    option::BarWidth{80},
+    option::Start{"["},
+    option::Fill{"■"},
+    option::Lead{"■"},
+    option::Remainder{"-"},
+    option::End{" ]"},
+    option::PrefixText{"Verifying:"},
+    option::ForegroundColor{Color::cyan},
+    option::ShowPercentage{true},
+    option::ShowElapsedTime{true},
+    option::ShowRemainingTime{true},
+    option::FontStyles{std::vector<FontStyle>{FontStyle::bold}}});
+}
 
 namespace pyle {
 
@@ -38,8 +60,8 @@ lean_obj_res evaluate_one(
     opt_state = lean_alloc_ctor(0, 0, 0);
   }
 
-  // Return the lean output. Note that `evaluate` here is not pyle::evaluate() -
-  // i.e., this is not a recursive call.
+  // Return the lean output. Note that `evaluate` here is not pyle::evaluate()
+  // - i.e., this is not a recursive call.
   auto out = lean_evaluate(boxed, opt_state, timeout);
   return out;
 }
@@ -74,8 +96,14 @@ py::tuple py_evaluate(
   uint32_t timeout) {
 
   // extract the given state, if any
+  // Also, increment the ref counter because it'll be consumed by the
+  // evaluate_one function, and we want to make sure python keep's access to
+  // it.
   lean_object *state =
     capsule.has_value() ? unpack_lean_object(capsule.value()) : nullptr;
+  if (state) {
+    lean_inc(state);
+  }
 
   // Run the actual evaluation, and grab the result out
   auto start = high_resolution_clock::now();
@@ -85,11 +113,11 @@ py::tuple py_evaluate(
 
   auto [msgs, tree, err, new_state] = parse_lean_output(lean_response);
 
-  // This step is a little subtlely weird. We call lean_inc to on the new_state
-  // to increment the ref count. Then we call lean_dec(lean_response) which
-  // decrements new_state's ref count, since it's a child object of
-  // lean_response. This balances the change of new_state's refs to 0 so we keep
-  // it in memory.
+  // This step is a little subtlely weird. We call lean_inc to on the
+  // new_state to increment the ref count. Then we call
+  // lean_dec(lean_response) which decrements new_state's ref count, since
+  // it's a child object of lean_response. This balances the change of
+  // new_state's refs to 0 so we keep it in memory.
   if (new_state) {
     lean_inc(new_state);
   }
@@ -177,6 +205,9 @@ py::tuple py_evaluate_many(
 
   // Now that we've got all the tasks enqueued, let's start waiting
   // TODO add progress bar
+  std::unique_ptr<ProgressBar> pbar = make_progress_bar();
+  int complete = 0;
+  show_console_cursor(false);
   for (int i = 0; i < task_ids.size(); i++) {
     // make sure ctrl-c works, at least partially. Not perfect solution but
     // it'll kill the main process. The threads will keep going so we need to
@@ -184,6 +215,7 @@ py::tuple py_evaluate_many(
     // entire ThreadPool code was AI'd.
     if (PyErr_CheckSignals() != 0) {
       pool.shutdown();
+      show_console_cursor(true);
       throw py::error_already_set();
     }
 
@@ -195,11 +227,13 @@ py::tuple py_evaluate_many(
     ThreadPool::CompletedTask val = res.value();
     result_t &result = val.value<result_t>();
     results[val.id] = result;
-    std::cout << "Got result id=" << val.id << std::endl;
+    complete++;
+    pbar->set_progress(100 * complete / results.size());
   }
+  show_console_cursor(true);
 
-  // Finally, we need to release the unique_ptr on the state_cache and transfer
-  // ownership to python.
+  // Finally, we need to release the unique_ptr on the state_cache and
+  // transfer ownership to python.
   Cache *cache = state_cache.release();
 
   // Also kill the threads.

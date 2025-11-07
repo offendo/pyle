@@ -13,7 +13,6 @@
 #include <optional>
 #include <queue>
 #include <stdexcept>
-#include <string>
 #include <thread>
 #include <tuple>
 #include <type_traits>
@@ -37,7 +36,7 @@ public:
     TaskId id;
     std::any result;
     std::exception_ptr error;
-    bool has_value{false};
+    bool has_value = false;
 
     bool succeeded() const { return !error; }
     bool is_void() const { return !has_value && !error; }
@@ -102,7 +101,7 @@ private:
   // to the completion queue. We need this indirection so we can track whether
   // the callable returned void.
   struct TaskPayload {
-    bool has_value{false};
+    bool has_value = false;
     std::any value;
   };
 
@@ -123,7 +122,7 @@ private:
 
   std::vector<std::thread> workers;
   TaskId next_id{0};
-  bool stopping{false};
+  bool stopping = false;
 };
 
 inline ThreadPool::ThreadPool(std::size_t thread_count) {

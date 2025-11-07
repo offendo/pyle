@@ -10,12 +10,12 @@
 namespace pyle {
 class Cache {
 private:
+public:
   std::mutex mutex;
   uint32_t capacity;
   std::list<std::string> lru;
   std::unordered_map<std::string, std::shared_ptr<lean_object>> cache;
 
-public:
   Cache(uint32_t capacity) : capacity(capacity) {};
   std::shared_ptr<lean_object> get(const std::string header);
   std::shared_ptr<lean_object>
