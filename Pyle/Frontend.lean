@@ -74,7 +74,7 @@ def evaluate_with_timeout (input : String) (cmdState? : Option Command.State) (t
       return (.ok output)
     else
       let func := fun () => evaluate input cmdState? opts fileName
-      let result <- runWithTimeout func timeout Task.Priority.dedicated
+      let result <- runWithTimeout func timeout Task.Priority.max
       match result with
         | .ok val => do
           return (.ok val)

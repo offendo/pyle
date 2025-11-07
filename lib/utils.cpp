@@ -25,20 +25,9 @@ void trim(std::string &s) {
 
 /**
  * Parses the given string into a header of import lines and the remaining body.
- *
- * We read through `s` line by line, collecting all consecutive lines
- * that begin with the keyword "import". Once a line does not start with
- * "import", the header stops and the rest of the string is split to the body at
- * that point.
- *
- * @param s The input string potentially containing import directives at the
- * top.
- * @return A std::pair where
- *         - first:  a string of concatenated import lines (no trailing
- * newline),
- *         - second: the remainder of the original string beginning at the first
- *                   non-import line.
  */
+// TODO I think this function isn't working quite right. Need to test and make
+// sure the header/body is being split off properly.
 std::pair<std::string, std::string> parse_header_and_body(std::string s) {
   auto header = std::vector<std::string>{};
   auto body = std::vector<std::string>{};

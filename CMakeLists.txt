@@ -64,6 +64,7 @@ pybind11_add_module(pyle
     lib/evaluate.cpp
     lib/cache.cpp
     lib/utils.cpp
+    lib/tpool.cpp
 )
 
 target_include_directories(pyle PRIVATE

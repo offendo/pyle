@@ -8,14 +8,15 @@ _, cache = pyle.evaluate_many(
 )
 
 print('Got the cache obj')
+input()
 
 thousand, cache = pyle.evaluate_many(
-    ["def x : Nat := 5\nexample : x == 5 := by trivial\n#print x"] * 8,
+    ["def x : Nat := 5\nexample : x == 5 := by trivial\n#print x"] * 1000,
     cache,
     timeout=1_000,
 )
 
-print(*thousand[:10],sep='\n=======================================\n')
+print(thousand[0][0])
 print('all done')
 input()
 hundred, _ = pyle.evaluate_many(
@@ -23,7 +24,7 @@ hundred, _ = pyle.evaluate_many(
     cache,
     timeout=1_000,
 )
-print(*hundred[:10],sep='\n=======================================\n')
+print(hundred[0][0])
 print('all done')
 input()
 
