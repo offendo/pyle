@@ -8,6 +8,6 @@ require "mathlib"
 
 @[default_target]
 lean_lib Pyle where
-  defaultFacets := #[LeanLib.sharedFacet]
-  buildType := Lake.BuildType.debug
-  moreLeancArgs := #["-g", "-Wl,-export_dynamic"]
+  defaultFacets := #[LeanLib.staticFacet]
+  buildType := Lake.BuildType.release
+  moreLeancArgs := #["-Wall", "-O3"]

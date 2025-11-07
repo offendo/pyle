@@ -35,7 +35,7 @@ set(LAKE_LIB_DIR "${CMAKE_SOURCE_DIR}/.lake/build/lib")
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 4) import the Pyle static library
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
-find_library(PYLELIB NAMES "libPyle.a.export" PATHS ${LAKE_LIB_DIR} NO_DEFAULT_PATH)
+find_library(PYLELIB NAMES "libPyle.a" PATHS ${LAKE_LIB_DIR} NO_DEFAULT_PATH)
 if (NOT PYLELIB)
     message(FATAL_ERROR "Could not find libPyle in ${LAKE_LIB_DIR}")
 endif()

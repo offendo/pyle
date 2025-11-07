@@ -37,4 +37,5 @@ dev-dependencies = [
     "datasets>=4.4.1",
     "pandas>=2.3.3",
     "tqdm>=4.67.1",
+    "cppclean>=0.13",
 ]

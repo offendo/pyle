@@ -47,6 +47,7 @@ Cache::put(const std::string header, lean_object *state) {
       lru.erase(it);
     }
     lru.push_back(header);
+    return cache[header];
   } else {
     // Otherwise, we have to add it to the cache. If it's at capacity, gotta pop
     // the LRU element.
