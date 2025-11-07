@@ -15,24 +15,30 @@ std::unique_ptr<Cache> make_cache(uint32_t capacity) {
 /* Get state associated with header. */
 std::shared_ptr<lean_object> Cache::get(const std::string header) {
   const std::lock_guard<std::mutex> lock(mutex);
+
+  // check if it exists. If not, return nullptr
   if (cache.find(header) == cache.end()) {
     return nullptr;
   }
+
+  // Otherwise grab it
   std::shared_ptr<lean_object> state = cache[header];
 
-  // Erase the position of the header in the lru, and move it to the end since
-  // it was most recently used;
+  // and update the LRU
   auto it = std::find(lru.begin(), lru.end(), header);
   if (it != lru.end()) {
     lru.erase(it);
   }
   lru.push_back(header);
+
   return state;
 }
 
 /* Add new (header,state) pair in the cache, erasing LRU element if needed.*/
-void Cache::put(const std::string header, lean_object *state) {
+std::shared_ptr<lean_object>
+Cache::put(const std::string header, lean_object *state) {
   const std::lock_guard<std::mutex> lock(mutex);
+
   // if it's already in the cache, just move the header to the end of the LRU
   // and nothing else.
   if (cache.find(header) != cache.end()) {
@@ -46,16 +52,23 @@ void Cache::put(const std::string header, lean_object *state) {
     // the LRU element.
     if (cache.size() == capacity) {
       std::string lru_header = lru.front();
-      std::cout << "popping header with use count "
-                << cache[lru_header].use_count() << std::endl;
       cache.erase(lru_header);
       lru.pop_front();
     }
 
     // otherwise insert it
-    cache.insert_or_assign(
-      header,
-      std::shared_ptr<lean_object>(state, [](lean_object *s) { lean_dec(s); }));
+    auto new_state = std::shared_ptr<lean_object>(state, [](lean_object *s) {
+      std::cout << "Deleting shared pointer. Ref count: " << s->m_rc
+                << std::endl;
+      lean_dec(s);
+    });
+    cache.insert_or_assign(header, new_state);
+    // Note - we return the value we just inserted because we will need to use
+    // it to process the associated theorem. Instead of doing a second get()
+    // call, just return here to ensure thread safety. Otherwise, it might
+    // happen that we return from this function, another thread pops this
+    // header, and then we fail the get() call.
+    return new_state;
   }
 }
 
@@ -71,8 +84,6 @@ void Cache::erase(const std::string header) {
   if (it != lru.end()) {
     lru.erase(it);
   }
-  std::cout << "popping header with use count " << cache[header].use_count()
-            << std::endl;
   cache.erase(header);
 }
 

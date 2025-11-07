@@ -18,8 +18,14 @@ pybind11::tuple py_evaluate(
 
 py::tuple py_evaluate_many(
   std::vector<std::string> &lean_code,
-  std::optional<std::unordered_map<std::string, std::shared_ptr<lean_object>>>
-    opt_cache,
-  uint32_t timeout);
+  std::optional<py::capsule> opt_cache,
+  uint32_t timeout = 0,
+  uint32_t cache_capacity = 5);
+
+py::tuple py_evaluate_batch(
+  std::vector<std::string> &lean_code,
+  std::optional<py::capsule> opt_cache,
+  uint32_t timeout = 0,
+  uint32_t cache_capacity = 5);
 
 } // namespace pyle

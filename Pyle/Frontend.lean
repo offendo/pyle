@@ -80,3 +80,27 @@ def evaluate_with_timeout (input : String) (cmdState? : Option Command.State) (t
           return (.ok val)
         | .error err => do
           return (.error err.toString)
+
+def runInThread (func : Unit → IO β) (prio : Task.Priority := Task.Priority.max) : IO $ Task (Except IO.Error β) :=
+  do
+    let funcWrapper: IO β := func () >>= fun b => return b
+    let task <- (IO.asTask funcWrapper prio)
+    return task
+
+def collate (input : List (Except IO.Error EvalResponse)) : List (Except String EvalResponse) := List.map unpack input
+  where
+    unpack (item : Except IO.Error EvalResponse) : Except String EvalResponse := match item with
+      | .error err => .error err.toString
+      | .ok val => .ok val
+
+@[export lean_evaluate_batch]
+def evaluate_batch (inputs : List String) (cmdState? : Option Command.State) (timeout : UInt32 := 0):
+    IO (List (Except String EvalResponse)) := do
+    let opts : Options := {}
+    let fileName : Option String := none
+    let tasks <- List.mapM
+        (fun inp => do
+          return (<- runInThread (fun () => evaluate inp cmdState? opts fileName ))) inputs
+
+    let results <- IO.wait $ Task.mapList collate tasks
+    return results

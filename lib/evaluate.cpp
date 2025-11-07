@@ -3,10 +3,13 @@
 #include "pyle/cache.hpp"
 #include "pyle/capsule.hpp"
 #include "pyle/lean.hpp"
+#include "pyle/utils.hpp"
 #include <chrono>
+#include <future>
 #include <iostream>
 #include <memory>
-#include <unordered_map>
+#include <pyerrors.h>
+
 using namespace std::chrono;
 
 namespace py = pybind11;
@@ -15,7 +18,7 @@ namespace pyle {
 
 lean_obj_res evaluate_one(
   const std::string &lean_code,
-  b_lean_obj_arg state,
+  lean_obj_arg state,
   uint32_t timeout) {
 
   // Box the cstring into a lean_object. This object will be consumed by the
@@ -35,11 +38,12 @@ lean_obj_res evaluate_one(
 
   // Return the lean output. Note that `evaluate` here is not pyle::evaluate() -
   // i.e., this is not a recursive call.
-  return lean_evaluate(boxed, opt_state, timeout);
+  auto out = lean_evaluate(boxed, opt_state, timeout);
+  return out;
 }
 
 std::tuple<std::string, std::string, std::string, lean_object *>
-parse_lean_output(lean_object *lean_response) {
+parse_lean_output(b_lean_obj_arg lean_response) {
   // note that we return an Except object, so we have to dig one value in to
   // grab the internals before we can parse the output.
   lean_object *except_obj = lean_ctor_get(lean_response, 0);
@@ -72,11 +76,10 @@ py::tuple py_evaluate(
     capsule.has_value() ? unpack_lean_object(capsule.value()) : nullptr;
 
   // Run the actual evaluation, and grab the result out
-  auto start = high_resolution_clock::now();
+  // auto start = high_resolution_clock::now();
   lean_object *lean_response = evaluate_one(lean_code, state, timeout);
-  auto stop = high_resolution_clock::now();
-  auto duration = duration_cast<milliseconds>(stop - start).count();
-  std::cout << "Eval took: " << duration << std::endl;
+  // auto stop = high_resolution_clock::now();
+  // auto duration = duration_cast<milliseconds>(stop - start).count();
 
   auto [msgs, tree, err, new_state] = parse_lean_output(lean_response);
 
@@ -85,54 +88,118 @@ py::tuple py_evaluate(
   // decrements new_state's ref count, since it's a child object of
   // lean_response. This balances the change of new_state's refs to 0 so we keep
   // it in memory.
-  lean_inc(new_state);
+  if (new_state) {
+    lean_inc(new_state);
+  }
   py::capsule return_capsule = pack_lean_object(new_state);
   if (lean_response) {
     lean_dec(lean_response);
   }
-  return py::make_tuple(msgs, tree, err, duration, return_capsule);
+  return py::make_tuple(msgs, tree, err, 0, return_capsule);
 }
 
 py::tuple py_evaluate_many(
   std::vector<std::string> &lean_code,
   std::optional<py::capsule> opt_cache,
   uint32_t timeout,
-  uint32_t cache_capacity = 5) {
+  uint32_t cache_capacity) {
 
   std::unique_ptr<Cache> state_cache = opt_cache.has_value()
                                          ? unpack_cache(opt_cache.value())
                                          : make_cache(cache_capacity);
 
-  // Loop through and run each input. Collate them all in this vector
+  // vector to collect the async futures
+  std::vector<
+    std::future<std::tuple<std::string, std::string, std::string, long long>>>
+    futures;
+
+  // vector to collect the actual results
   std::vector<std::tuple<std::string, std::string, std::string, long long>>
-    results(lean_code.size());
+    results;
 
-  for (auto &thm : lean_code) {
-    std::string header = "";
-    std::shared_ptr<lean_object> state = state_cache->get(header);
-    if (state) {
-      std::cout << "Got item from the cache: " << state.use_count()
-                << std::endl;
-    } else {
-      std::cout << "Null state from cache" << state.use_count() << std::endl;
-    }
+  for (std::string &thm : lean_code) {
+    auto future = std::async(
+      std::launch::async,
+      [&state_cache, timeout](std::string thm) {
+        lean_initialize_thread();
+        auto [header, body] = parse_header_and_body(thm);
+        std::shared_ptr<lean_object> state = state_cache->get(header);
+        if (!state) {
+          // Evaluate the header
+          lean_object *header_response = evaluate_one(header, nullptr, 0);
 
-    // Run the actual evaluation, and grab the result out
-    lean_object *lean_response = evaluate_one(thm, state.get(), timeout);
+          // Parse the output.
+          auto [m, t, err, header_state] = parse_lean_output(header_response);
 
-    // Parse the output.
-    auto [msgs, tree, err, new_state] = parse_lean_output(lean_response);
+          // If we errored on this header, we need to count this thm as failure
+          // Make sure to 'continue' to skip the rest of the loop.
+          if (!err.empty()) {
+            return std::tuple<std::string, std::string, std::string, long long>{
+              "",
+              "",
+              err,
+              0};
+          }
 
-    // **Important**: This lean_dec will delete new_state! Which is good because
-    // we don't want it - it'll just eat up memory. In the future, if there's a
-    // need for a feature for incremental verification, we can package new_state
-    // up in a py::capsule and return it to python, or stick it in the cache.
-    if (lean_response) {
-      lean_dec(lean_response);
-    }
+          // Otherwise, store the (header,state) in the cache!
+          // First off, make sure we increment the new_state so we don't lose it
+          // when we decrement header_response. Then we can safely add it and
+          // grab the shared_ptr on return.
+          lean_inc(header_state);
+          state = state_cache->put(header, header_state);
+          if (header_response) {
+            lean_dec(header_response);
+          }
+        }
+
+        // Now we definitely have the header state in the variable `state`.
+        // **IMPORTANT** evaluate_one will consume the state reference, so we
+        // need to preemptively increment it if we want to keep it around.
+        lean_inc(state.get());
+
+        // Now run the actual evaluation. Also measure the time it takes
+        // auto start = high_resolution_clock::now();
+        lean_object *lean_response = evaluate_one(body, state.get(), 0);
+        // auto stop = high_resolution_clock::now();
+        // auto duration = duration_cast<milliseconds>(stop - start).count();
+
+        // Parse the output.
+        auto [msgs, tree, err, thm_state] = parse_lean_output(lean_response);
+
+        // **IMPORTANT**: This lean_dec will delete thm_state! Which is good
+        // because we don't want it - it'll just eat up memory. In the future,
+        // if there's a need for a feature for incremental verification, we can
+        // package thm_state up in a py::capsule and return it to python, or
+        // stick it in the cache, or something. Whatever we do, make sure we
+        // lean_inc it.
+        if (lean_response) {
+          lean_dec(lean_response);
+        }
+        lean_finalize_thread();
+        return std::tuple<std::string, std::string, std::string, long long>{
+          msgs,
+          tree,
+          err,
+          (long long)0};
+      },
+      thm);
+    futures.push_back(std::move(future));
   }
-  py::capsule return_capsule =
-    py::capsule(&state_cache, "StateCache", [](PyObject *obj) {});
+
+  // Now that we've got all the futures, let's start waiting
+  for (auto &fut : futures) {
+    // make sure ctrl-c works
+    if (PyErr_CheckSignals() != 0)
+      throw py::error_already_set();
+    results.push_back(fut.get());
+    std::cout << "Got one: " << results.size() << std::endl;
+  }
+
+  // Finally, we need to release the unique_ptr on the state_cache and transfer
+  // ownership to python.
+  Cache *cache = state_cache.release();
+
+  py::capsule return_capsule = pack_cache(cache);
 
   return py::make_tuple(results, return_capsule);
 }

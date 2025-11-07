@@ -28,4 +28,13 @@ tuple[str, str, lean_object, str | None])",
     py::arg("lean_code"),
     py::arg("initial_state") = py::none(),
     py::arg("timeout") = 0);
+
+  m.def(
+    "evaluate_many",
+    &pyle::py_evaluate_many,
+    R"(Processes bulk)",
+    py::arg("lean_code"),
+    py::arg("state_cache") = py::none(),
+    py::arg("timeout") = 0,
+    py::arg("capacity") = 5);
 }

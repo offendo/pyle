@@ -7,7 +7,7 @@ open Task Lean.Elab
 def runWithTimeout
   (func : Unit → IO β)
   (timeout : UInt32)
-  (prio : Task.Priority := Task.Priority.default) : IO (Except IO.Error β) :=
+  (prio : Task.Priority := Task.Priority.dedicated) : IO (Except IO.Error β) :=
   do
     -- Launch a timer function to run in a separate thread
     let timerFunc: IO (Except IO.Error β) := do

@@ -18,7 +18,8 @@ private:
 public:
   Cache(uint32_t capacity) : capacity(capacity) {};
   std::shared_ptr<lean_object> get(const std::string header);
-  void put(const std::string header, lean_object *state);
+  std::shared_ptr<lean_object>
+  put(const std::string header, lean_object *state);
   void erase(const std::string header);
   void erase_all();
 };

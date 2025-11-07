@@ -1,4 +1,5 @@
 #include "pyle/capsule.hpp"
+#include <iostream>
 
 namespace pyle {
 
@@ -22,12 +23,12 @@ lean_object *unpack_lean_object(const pybind11::capsule &capsule) {
   return obj;
 }
 
-void cleanup_cache(void *ptr) { static_cast<Cache *>(ptr)->erase_all(); }
+// void cleanup_cache(void *ptr) { static_cast<Cache *>(ptr)->erase_all(); }
 
-Cache *pack_cache(Cache *cache) {
+pybind11::capsule pack_cache(Cache *cache) {
   // TODO increment the refs of all the objects in the capsule
   return pybind11::capsule(cache, "Cache", [](PyObject *capsule) {
-    cleanup_cache(PyCapsule_GetPointer(capsule, "Cache"));
+    // cleanup_cache(PyCapsule_GetPointer(capsule, "Cache"));
   });
 }
 
