@@ -20,12 +20,7 @@ py::tuple py_evaluate_many(
   std::vector<std::string> &lean_code,
   std::optional<py::capsule> opt_cache,
   uint32_t timeout = 0,
-  uint32_t cache_capacity = 5);
-
-py::tuple py_evaluate_batch(
-  std::vector<std::string> &lean_code,
-  std::optional<py::capsule> opt_cache,
-  uint32_t timeout = 0,
-  uint32_t cache_capacity = 5);
+  uint32_t cache_capacity = 5,
+  uint32_t n_threads = 4);
 
 } // namespace pyle

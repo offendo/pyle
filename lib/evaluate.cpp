@@ -137,7 +137,8 @@ py::tuple py_evaluate_many(
   std::vector<std::string> &lean_code,
   std::optional<py::capsule> opt_cache,
   uint32_t timeout,
-  uint32_t cache_capacity) {
+  uint32_t cache_capacity,
+  uint32_t n_threads) {
 
   std::unique_ptr<Cache> state_cache = opt_cache.has_value()
                                          ? unpack_cache(opt_cache.value())
@@ -146,7 +147,7 @@ py::tuple py_evaluate_many(
   // vector to collect the actual results
   std::vector<result_t> results(lean_code.size());
 
-  ThreadPool pool(std::thread::hardware_concurrency());
+  ThreadPool pool(n_threads);
   std::stringstream ss;
 
   std::vector<int> task_ids;

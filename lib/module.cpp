@@ -36,5 +36,6 @@ tuple[str, str, lean_object, str | None])",
     py::arg("lean_code"),
     py::arg("state_cache") = py::none(),
     py::arg("timeout") = 0,
-    py::arg("capacity") = 5);
+    py::arg("capacity") = 5,
+    py::arg("n_threads") = 4);
 }
