@@ -95,6 +95,7 @@ endif()
 
 set_target_properties(pyle PROPERTIES
     CXX_STANDARD            17
+    CMAKE_CXX_STANDARD_REQUIRED TRUE
     BUILD_WITH_INSTALL_RPATH ON
     BUILD_RPATH             "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
     INSTALL_RPATH           "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"

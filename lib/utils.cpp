@@ -1,6 +1,6 @@
 #include "pyle/utils.hpp"
+#include <algorithm>
 #include <cctype>
-#include <iostream>
 #include <sstream>
 #include <vector>
 

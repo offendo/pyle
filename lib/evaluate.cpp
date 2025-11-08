@@ -8,7 +8,6 @@
 #include "pyle/lean.hpp"
 #include "pyle/tpool.hpp"
 #include "pyle/utils.hpp"
-#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <memory>

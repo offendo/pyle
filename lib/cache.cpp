@@ -1,4 +1,5 @@
 #include "pyle/cache.hpp"
+#include <algorithm>
 #include <iostream>
 #include <lean/lean.h>
 #include <memory>
