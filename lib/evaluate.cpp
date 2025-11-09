@@ -148,6 +148,7 @@ py::tuple py_evaluate_many(
   std::vector<result_t> results(lean_code.size());
 
   ThreadPool pool(n_threads);
+  std::cout << "Launched pool with " <<n_threads << " threads." << std::endl;
   std::stringstream ss;
 
   std::vector<int> task_ids;

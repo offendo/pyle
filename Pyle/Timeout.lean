@@ -19,13 +19,13 @@ def runWithTimeout
   (timeout : UInt32)
   (prio : Task.Priority := Task.Priority.dedicated) : IO (Except IO.Error β) := do
 
-  let timer ← IO.asTask (cancellableTimer timeout) Task.Priority.dedicated
+  let timer ← IO.asTask (cancellableTimer timeout) prio
   let funcWrapper: IO (Except IO.Error β) := func () >>= fun b => return .ok b
   let job ← IO.asTask funcWrapper prio
 
   let result ← IO.waitAny [job, timer]
 
-  -- cancel both tasks — no harm canceling the already-finished one
+  -- cancel both tasks
   IO.cancel job
   IO.cancel timer
 
