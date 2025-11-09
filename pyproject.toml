@@ -28,7 +28,7 @@ wheel.install-dir = "."
 
 [tool.scikit-build.cmake]
 source-dir = "."
-build-type = "Debug"
+build-type = "Release"
 
 [tool.rye]
 dev-dependencies = [
