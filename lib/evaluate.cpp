@@ -146,8 +146,8 @@ py::tuple py_evaluate_many(
                                          ? unpack_cache(opt_cache.value())
                                          : make_cache(cache_capacity);
 
-  ThreadPool pool(n_threads);
-  std::cout << "Launched pool with " << n_threads << " threads." << std::endl;
+  ThreadPool pool(n_threads, &lean_initialize_thread, &lean_finalize_thread);
+
   std::stringstream ss;
   std::vector<int> task_ids(lean_code.size());
 
@@ -158,7 +158,6 @@ py::tuple py_evaluate_many(
     for (int i = 0; i < lean_code.size(); i++) {
       std::string &thm = lean_code[i];
       auto lambda_fn = [&state_cache, &timeout](const std::string &thm) {
-        lean_initialize_thread();
         auto [header, body] = parse_header_and_body(thm);
         std::shared_ptr<lean_object> state = state_cache->get(header);
         if (!state) {
@@ -210,7 +209,6 @@ py::tuple py_evaluate_many(
         if (lean_response) {
           lean_dec(lean_response);
         }
-        lean_finalize_thread();
         return result_t{msgs, tree, err, tactics, duration};
       };
       int task_id = pool.enqueue(lambda_fn, thm);

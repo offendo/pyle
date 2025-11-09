@@ -18,10 +18,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-// The pool owns a background worker set and two queues: one inbound task queue
-// and one outbound completion queue. A client enqueues callables and later
-// harvests CompletedTask objects to inspect results or surface exceptions.
+#include <limits> // new
 
 namespace pyle {
 
@@ -72,7 +69,10 @@ public:
     }
   };
 
-  explicit ThreadPool(std::size_t thread_count);
+  // Constructor: provide number of threads and optional per-thread init/finalize.
+  explicit ThreadPool(std::size_t thread_count,
+                      std::function<void()> thread_init = {},
+                      std::function<void()> thread_finalize = {});
   ~ThreadPool();
 
   ThreadPool(const ThreadPool &) = delete;
@@ -123,9 +123,17 @@ private:
   std::vector<std::thread> workers;
   TaskId next_id{0};
   bool stopping = false;
+
+  // Per-thread lifecycle hooks.
+  std::function<void()> thread_init;
+  std::function<void()> thread_finalize;
 };
 
-inline ThreadPool::ThreadPool(std::size_t thread_count) {
+inline ThreadPool::ThreadPool(std::size_t thread_count,
+                              std::function<void()> thread_init_fn,
+                              std::function<void()> thread_finalize_fn)
+    : thread_init(std::move(thread_init_fn)),
+      thread_finalize(std::move(thread_finalize_fn)) {
   workers.reserve(thread_count);
   for (std::size_t i = 0; i < thread_count; ++i) {
     workers.emplace_back([this] { worker_loop(); });
@@ -159,13 +167,39 @@ inline bool ThreadPool::is_shutdown() const {
 }
 
 inline void ThreadPool::worker_loop() {
+  // Run per-thread init if provided. If it throws, report and start shutdown.
+  if (thread_init) {
+    try {
+      thread_init();
+    } catch (...) {
+      std::exception_ptr ep = std::current_exception();
+      // push an error into the completion queue with a special TaskId so users
+      // can detect thread-level failures.
+      CompletedTask err;
+      err.id = std::numeric_limits<TaskId>::max();
+      err.error = ep;
+      {
+        std::lock_guard<std::mutex> rlock(result_mutex);
+        completed.push(std::move(err));
+      }
+      result_cv.notify_one();
+      // start pool shutdown to avoid partially-initialized pool state.
+      {
+        std::lock_guard<std::mutex> lock(task_mutex);
+        stopping = true;
+      }
+      task_cv.notify_all();
+      return; // exit this worker
+    }
+  }
+
   for (;;) {
     Task task;
     {
       std::unique_lock<std::mutex> lock(task_mutex);
       task_cv.wait(lock, [this] { return stopping || !tasks.empty(); });
       if (stopping && tasks.empty()) {
-        return;
+        break;
       }
       task = std::move(tasks.front());
       tasks.pop();
@@ -187,6 +221,24 @@ inline void ThreadPool::worker_loop() {
       completed.push(std::move(completed_task));
     }
     result_cv.notify_one();
+  }
+
+  // Run per-thread finalize if provided. If it throws, report via completion queue.
+  if (thread_finalize) {
+    try {
+      thread_finalize();
+    } catch (...) {
+      std::exception_ptr ep = std::current_exception();
+      CompletedTask err;
+      err.id = std::numeric_limits<TaskId>::max();
+      err.error = ep;
+      {
+        std::lock_guard<std::mutex> rlock(result_mutex);
+        completed.push(std::move(err));
+      }
+      result_cv.notify_one();
+      // don't change stopping here; pool is already draining/exit path
+    }
   }
 }
 
@@ -272,7 +324,11 @@ inline std::size_t ThreadPool::pending_tasks() const {
 
 /* Example usage:
  *
- *   pyle::ThreadPool pool(10);
+ *   // Provide init/finalize to run in every worker thread.
+ *   pyle::ThreadPool pool(10,
+ *                        [](){ /* per-thread init e.g. attach to local cache * / },
+ *                        [](){ /* per-thread finalize e.g. flush thread-local logs * / });
+ *
  *   std::unique_ptr<pyle::Cache> state_cache = make_cache(capacity);
  *
  *   // Schedule work; lambdas can capture references to shared state such as
@@ -293,9 +349,18 @@ inline std::size_t ThreadPool::pending_tasks() const {
  *       use_state(value);
  *       break;
  *     }
+ *     // Detect thread-level errors: id == TaskId max
+ *     if (completed->id == std::numeric_limits<pyle::ThreadPool::TaskId>::max()) {
+ *       try {
+ *         completed->rethrow_if_error();
+ *       } catch (const std::exception &e) {
+ *         // handle thread init/finalize error
+ *       }
+ *     }
  *   }
  *
  *   pool.shutdown(); // optional: destructor calls this automatically
  */
 
 } // namespace pyle
+
