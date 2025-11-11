@@ -38,4 +38,12 @@ tuple[str, str, lean_object, str | None])",
     py::arg("timeout") = 0,
     py::arg("capacity") = 5,
     py::arg("n_threads") = 4);
+
+  m.def(
+    "evaluate_test",
+    &pyle::py_evaluate_test_new,
+    R"(Test)",
+    py::arg("lean_code"),
+    py::arg("state_cache") = py::none(),
+    py::arg("timeout") = 0);
 }

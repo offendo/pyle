@@ -23,4 +23,8 @@ py::tuple py_evaluate_many(
   uint32_t cache_capacity = 5,
   uint32_t n_threads = 4);
 
+py::tuple py_evaluate_test_new(
+  const std::string &lean_code,
+  std::optional<py::capsule> capsule,
+  uint32_t timeout = 0);
 } // namespace pyle

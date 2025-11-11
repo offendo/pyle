@@ -62,6 +62,7 @@ lean_obj_res evaluate_one(
     // opt_state = none
     opt_state = lean_alloc_ctor(0, 0, 0);
   }
+  std::cout << "Ready to call lean" << std::endl;
 
   // Return the lean output. Note that `evaluate` here is not pyle::evaluate()
   // - i.e., this is not a recursive call.
@@ -228,8 +229,8 @@ py::tuple py_evaluate_many(
       std::cout << "Shutdown" << std::endl;
       pool.shutdown();
       pbar->set_option(option::PrefixText{"Shutting down..."});
-      while (!pool.is_shutdown()){
-	  std::this_thread::sleep_for(std::chrono::milliseconds(250));
+      while (!pool.is_shutdown()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
       }
       show_console_cursor(true);
       throw py::error_already_set();
@@ -242,7 +243,7 @@ py::tuple py_evaluate_many(
     }
     ThreadPool::CompletedTask val = res.value();
     results[val.id] = val.value<result_t>();
-    pbar->set_progress(100 * (i+1) / results.size());
+    pbar->set_progress(100 * (i + 1) / results.size());
 
     // Format a postfix string
     ss << "(" << i + 1 << "/" << results.size() << ")";
@@ -262,6 +263,68 @@ py::tuple py_evaluate_many(
   py::capsule return_capsule = pack_cache(state_cache.release());
 
   return py::make_tuple(results, return_capsule);
+}
+
+std::tuple<std::string, std::string, std::string, std::string, lean_object *>
+parse_lean_output_test(b_lean_obj_arg lean_response) {
+  lean_object *product_obj = lean_ctor_get(lean_response, 0);
+
+  std::cout << "Got product out" << std::endl;
+  // cache X response
+  lean_object *cache = lean_ctor_get(product_obj, 0);
+  lean_object *response = lean_ctor_get(product_obj, 1);
+  std::cout << "Got cache and response out" << std::endl;
+
+  // now get the inside of the response
+  lean_object *new_state = lean_ctor_get(response, 0);
+  lean_object *msgs = lean_ctor_get(response, 1);
+  lean_object *trees = lean_ctor_get(response, 2);
+  lean_object *tactics = lean_ctor_get(response, 3);
+  std::cout << "got out things in response" << std::endl;
+
+  std::string msg_str = lean_string_cstr(msgs);
+  std::string tree_str = lean_string_cstr(trees);
+  std::string tac_str = lean_string_cstr(tactics);
+  std::cout << "made strings" << std::endl;
+  return std::make_tuple(msg_str, tree_str, "", tac_str, cache);
+}
+
+py::tuple py_evaluate_test_new(
+  const std::string &lean_code,
+  std::optional<py::capsule> capsule,
+  uint32_t timeout) {
+
+  // extract the state cache possibly
+  lean_object *state_cache =
+    capsule.has_value() ? unpack_lean_object(capsule.value()) : nullptr;
+  if (state_cache) {
+    lean_inc(state_cache);
+  }
+  std::cout << " Got here" << std::endl;
+
+  // Run the actual evaluation, and grab the result out
+  auto start = high_resolution_clock::now();
+  lean_object *lean_response = evaluate_one(lean_code, state_cache, timeout);
+  auto stop = high_resolution_clock::now();
+  auto duration = duration_cast<milliseconds>(stop - start).count();
+
+  std::cout << "Called lean" << std::endl;
+  auto [msgs, tree, err, tacs, new_state_cache] =
+    parse_lean_output_test(lean_response);
+
+  // This step is a little subtlely weird. We call lean_inc to on the
+  // new_state to increment the ref count. Then we call
+  // lean_dec(lean_response) which decrements new_state's ref count, since
+  // it's a child object of lean_response. This balances the change of
+  // new_state's refs to 0 so we keep it in memory.
+  if (new_state_cache) {
+    lean_inc(new_state_cache);
+  }
+  py::capsule return_capsule = pack_lean_object(new_state_cache);
+  if (lean_response) {
+    lean_dec(lean_response);
+  }
+  return py::make_tuple(msgs, tree, err, tacs, duration, return_capsule);
 }
 
 } // namespace pyle
