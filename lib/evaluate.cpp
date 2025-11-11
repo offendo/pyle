@@ -225,7 +225,12 @@ py::tuple py_evaluate_many(
     // shut them down. IDK if pool.shutdown() will take care of it because the
     // entire ThreadPool code was AI'd.
     if (PyErr_CheckSignals() != 0) {
+      std::cout << "Shutdown" << std::endl;
       pool.shutdown();
+      pbar->set_option(option::PrefixText{"Shutting down..."});
+      while (!pool.is_shutdown()){
+	  std::this_thread::sleep_for(std::chrono::milliseconds(250));
+      }
       show_console_cursor(true);
       throw py::error_already_set();
     }
