@@ -45,11 +45,7 @@ def processCommandsWithInfoTrees
   let s ← IO.processCommands inputCtx parserState commandState <&> Frontend.State.commandState
   pure (s, s.messages.toList, s.infoState.trees.toList)
 
-def processCommandsWithInfoTrees2
-    (parserState : Parser.ModuleParserState)
-    (commandState : Command.State) : Frontend.FrontendM (Command.State × List Message × List InfoTree) := do
-  Frontend.setCommandState { commandState with infoState.enabled := true }
-  Frontend.setParserState parserState
+def processCommandsWithInfoTrees2 : Frontend.FrontendM (Command.State × List Message × List InfoTree) := do
   let _ <- Frontend.processCommands
   let s <- Frontend.getCommandState
   pure (s, s.messages.toList, s.infoState.trees.toList)
@@ -72,7 +68,10 @@ def runSearchPathInit : IO Unit := unsafe do
   enableInitializersExecution
 
 @[export lean_evaluate]
-def evaluate_one (input : String) (cache? : Option (LRU String Environment)) : IO $ (LRU String Environment) × EvalResponse := unsafe do
+def evaluate_one
+  (input : String)
+  (cache? : Option (LRU String Environment))
+  : IO $ (LRU String Environment) × EvalResponse := do
   let fileName   := "<input>"
   let inputCtx   := Parser.mkInputContext input fileName
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
@@ -85,8 +84,6 @@ def evaluate_one (input : String) (cache? : Option (LRU String Environment)) : I
   -- TODO everything below here should be moved to a function which can be run in a thread
   -- That way, hopefully, the Command.State which is modified in place is
   -- created as a thread-local variable and isn't modified again.
-  -- TODO figure out how to use `IO.CancelToken`s appropriately with the eval
-  -- stuff. Pantograph has it figured out...
   let cmdStateBefore := (<-match env? with
     -- If we find it, go ahead and use it.
     | some env => return Command.mkState env messages opts
@@ -95,90 +92,27 @@ def evaluate_one (input : String) (cache? : Option (LRU String Environment)) : I
       let (env, messages) ← processHeader header opts messages inputCtx
       cache.put (toString header) env
       return Command.mkState env messages opts)
-  return (cache, <- process inputCtx parserState cmdStateBefore)
+
+  -- Execute the FrontendM monad by splitting it into a ReaderT -> StateRefT
+  -- Doing this inside the thread should ensure that we don't have states
+  -- getting in each other's ways. Furthermore, we should be able to use CancelToken now!
+  let frontendState := Frontend.State.mk cmdStateBefore parserState parserState.pos Array.empty
+  let stateT: StateRefT' IO.RealWorld Frontend.State IO EvalResponse := process inputCtx
+  -- TODO maybe return this finalState for iterative computation
+  let (response, finalState) <- stateT.run frontendState
+  return (cache, response)
 where
   process
     (inputCtx : Parser.InputContext)
-    (parserState : Parser.ModuleParserState)
-    (cmdStateBefore : Command.State) : IO EvalResponse := do
-    let (cmdStateAfter, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState cmdStateBefore
+    : StateRefT Frontend.State IO EvalResponse := do
+    let ctx := Frontend.Context.mk inputCtx
+    let (cmdStateAfter, messages, trees) ← processCommandsWithInfoTrees2.run ctx
+
+    -- Parse output
     let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
     let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
     let tacs <- tactics trees
     let jsontactics := Json.arr (tacs.toArray.map fun m => toJson m)
-    let response : EvalResponse := ⟨cmdStateAfter, toString msgs, toString tree, toString jsontactics⟩
-    return response
 
--- def evaluate (input : String) (cmdState? : Option Command.State) (opts : Options := {}) (fileName : Option String := none)
---   : IO EvalResponse := unsafe do
---   let fileName   := fileName.getD "<input>"
---   let inputCtx   := Parser.mkInputContext input fileName
---
---   match cmdState? with
---   | none => do
---     -- Split the processing into two phases to prevent self-reference in proofs in tactic mode
---     let (header, parserState, messages) ← Parser.parseHeader inputCtx
---     let (env, messages) ← processHeader header opts messages inputCtx (leakEnv := false)
---     let headerOnlyState := Command.mkState env messages opts
---     let (cmdState, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState headerOnlyState
---     let jsontree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
---     let jsonmsgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
---     let tacs <- tactics trees
---     let jsontactics := Json.arr (tacs.toArray.map fun m => toJson m)
---     return ⟨cmdState, toString jsonmsgs, toString jsontree, toString jsontactics⟩
---   | some cmdStateBefore => do
---     let parserState : Parser.ModuleParserState := {}
---     let (cmdStateAfter, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState cmdStateBefore
---     let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
---     let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
---     let tacs <- tactics trees
---     let jsontactics := Json.arr (tacs.toArray.map fun m => toJson m)
---     return ⟨cmdStateAfter, toString msgs, toString tree, toString jsontactics⟩
---
--- @[export lean_evaluate]
--- def evaluate_with_timeout (input : String) (env? : Option Environment) (timeout : UInt32 := 0):
---     IO (Except String EvalResponse) := do
---     let opts : Options := {}
---     let fileName   := "<input>"
---     let inputCtx   := Parser.mkInputContext input fileName
---     let (header, parserState, messages) ← Parser.parseHeader inputCtx
---     let state? := match env? with
---       | some env => Command.mkState env messages opts
---       | none => none
---
---     -- Only call the timeout thread if we need to.
---     if (timeout <= 0) then
---       let output <- evaluate input state? opts fileName
---       return (.ok output)
---     else
---       let func := fun () => evaluate input state? opts fileName
---       let result <- runWithTimeout func timeout Task.Priority.dedicated
---       match result with
---         | .ok val => do
---           return (.ok val)
---         | .error err => do
---           return (.error err.toString)
-
--- def runInThread (func : Unit → IO β) (prio : Task.Priority := Task.Priority.max) : IO $ Task (Except IO.Error β) :=
---   do
---     let funcWrapper: IO β := func () >>= fun b => return b
---     let task <- (IO.asTask funcWrapper prio)
---     return task
---
--- def collate (input : List (Except IO.Error EvalResponse)) : List (Except String EvalResponse) := List.map unpack input
---   where
---     unpack (item : Except IO.Error EvalResponse) : Except String EvalResponse := match item with
---       | .error err => .error err.toString
---       | .ok val => .ok val
---
--- @[export lean_evaluate_batch]
--- def evaluate_batch (inputs : List String) (cmdState? : Option Command.State) :
---     IO (List (Except String EvalResponse)) := do
---     let opts : Options := {}
---     let fileName : Option String := none
---     let tasks <- List.mapM
---         (fun inp => do
---           return (<- runInThread (fun () => evaluate inp cmdState? opts fileName ))) inputs
---
---     let results <- IO.wait $ Task.mapList collate tasks
---     return results
+    -- return
+    return ⟨cmdStateAfter, toString msgs, toString tree, toString jsontactics⟩
