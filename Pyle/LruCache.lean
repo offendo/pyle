@@ -28,6 +28,7 @@ def LRU.mkEmpty [BEq α] [Hashable α] (capacity : Nat) : IO (LRU α β) := do
   let r ← Std.Mutex.new st
   return { ref := r }
 
+
 /-- Internal helper: detach a key from the linked list. -/
 private def detach [BEq α] [Hashable α] (st : LRUState α β) (k : α) : LRUState α β :=
   match st.table.get? k with
@@ -152,4 +153,14 @@ def example1 : IO Unit := do
   IO.println s!"contains a: {(← cache.contains "a")}"
   IO.println s!"size: {(← cache.size)}"
 
-#eval example1
+@[export print_cache]
+def LRU.printCache [ToString a] [BEq a] [Hashable a] (cache : LRU a b) : IO Unit := do
+  IO.println "Cache summary:"
+  IO.println s!"*** Size: {<-cache.size}"
+  cache.ref.atomically (fun ref => do
+    let st <- ref.get
+    let keys := st.table.keys
+    IO.println s!"*** Keys: {keys}"
+    )
+
+-- #eval example1

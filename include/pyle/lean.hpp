@@ -13,7 +13,7 @@ extern "C" void lean_initialize_thread();
 extern "C" void lean_finalize_thread();
 
 // exported Lean functions
-extern "C" lean_object *run_lean_initialization();
+extern "C" lean_object *run_search_path_init();
 extern "C" lean_object *lean_evaluate(lean_obj_arg, lean_obj_arg, uint32_t);
 // extern "C" lean_object *
 // lean_evaluate_batch(lean_obj_arg, lean_obj_arg, uint32_t);

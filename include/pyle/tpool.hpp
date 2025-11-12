@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <exception>
 #include <functional>
+#include <limits> // new
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -18,7 +19,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include <limits> // new
 
 namespace pyle {
 
@@ -69,10 +69,12 @@ public:
     }
   };
 
-  // Constructor: provide number of threads and optional per-thread init/finalize.
-  explicit ThreadPool(std::size_t thread_count,
-                      std::function<void()> thread_init = {},
-                      std::function<void()> thread_finalize = {});
+  // Constructor: provide number of threads and optional per-thread
+  // init/finalize.
+  explicit ThreadPool(
+    std::size_t thread_count,
+    std::function<void()> thread_init = {},
+    std::function<void()> thread_finalize = {});
   ~ThreadPool();
 
   ThreadPool(const ThreadPool &) = delete;
@@ -129,11 +131,12 @@ private:
   std::function<void()> thread_finalize;
 };
 
-inline ThreadPool::ThreadPool(std::size_t thread_count,
-                              std::function<void()> thread_init_fn,
-                              std::function<void()> thread_finalize_fn)
-    : thread_init(std::move(thread_init_fn)),
-      thread_finalize(std::move(thread_finalize_fn)) {
+inline ThreadPool::ThreadPool(
+  std::size_t thread_count,
+  std::function<void()> thread_init_fn,
+  std::function<void()> thread_finalize_fn)
+  : thread_init(std::move(thread_init_fn)),
+    thread_finalize(std::move(thread_finalize_fn)) {
   workers.reserve(thread_count);
   for (std::size_t i = 0; i < thread_count; ++i) {
     workers.emplace_back([this] { worker_loop(); });
@@ -223,7 +226,8 @@ inline void ThreadPool::worker_loop() {
     result_cv.notify_one();
   }
 
-  // Run per-thread finalize if provided. If it throws, report via completion queue.
+  // Run per-thread finalize if provided. If it throws, report via completion
+  // queue.
   if (thread_finalize) {
     try {
       thread_finalize();
@@ -326,8 +330,9 @@ inline std::size_t ThreadPool::pending_tasks() const {
  *
  *   // Provide init/finalize to run in every worker thread.
  *   pyle::ThreadPool pool(10,
- *                        [](){ /* per-thread init e.g. attach to local cache * / },
- *                        [](){ /* per-thread finalize e.g. flush thread-local logs * / });
+ *                        [](){ per-thread init e.g. attach to local cache },
+ *                        [](){ per-thread finalize e.g. flush thread-local logs
+ * });
  *
  *   std::unique_ptr<pyle::Cache> state_cache = make_cache(capacity);
  *
@@ -350,8 +355,8 @@ inline std::size_t ThreadPool::pending_tasks() const {
  *       break;
  *     }
  *     // Detect thread-level errors: id == TaskId max
- *     if (completed->id == std::numeric_limits<pyle::ThreadPool::TaskId>::max()) {
- *       try {
+ *     if (completed->id ==
+ * std::numeric_limits<pyle::ThreadPool::TaskId>::max()) { try {
  *         completed->rethrow_if_error();
  *       } catch (const std::exception &e) {
  *         // handle thread init/finalize error
@@ -363,4 +368,3 @@ inline std::size_t ThreadPool::pending_tasks() const {
  */
 
 } // namespace pyle
-

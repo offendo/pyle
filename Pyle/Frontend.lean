@@ -45,6 +45,14 @@ def processCommandsWithInfoTrees
   let s ← IO.processCommands inputCtx parserState commandState <&> Frontend.State.commandState
   pure (s, s.messages.toList, s.infoState.trees.toList)
 
+def processCommandsWithInfoTrees2
+    (parserState : Parser.ModuleParserState)
+    (commandState : Command.State) : Frontend.FrontendM (Command.State × List Message × List InfoTree) := do
+  Frontend.setCommandState { commandState with infoState.enabled := true }
+  Frontend.setParserState parserState
+  let _ <- Frontend.processCommands
+  let s <- Frontend.getCommandState
+  pure (s, s.messages.toList, s.infoState.trees.toList)
 /--
 Process some text input, with or without an existing command state.
 If there is no existing environment, we parse the input for headers (e.g. import statements),
@@ -58,6 +66,7 @@ Returns:
 4. List of info trees
 -/
 
+@[export run_search_path_init]
 def runSearchPathInit : IO Unit := unsafe do
   Lean.initSearchPath (← Lean.findSysroot)
   enableInitializersExecution
@@ -68,40 +77,37 @@ def evaluate_one (input : String) (cache? : Option (LRU String Environment)) : I
   let inputCtx   := Parser.mkInputContext input fileName
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
   let opts : Options := {}
-  IO.println s!"Header: {toString header}"
   let cache <- (match cache? with
     | some c => return c
     | none => return <-LRU.mkEmpty 5)
-  IO.println s!"Made cache: {<-cache.size}"
   -- Search cache for header
-  match (<-cache.get (toString header)) with
+  let env? <- cache.get (toString header)
+  -- TODO everything below here should be moved to a function which can be run in a thread
+  -- That way, hopefully, the Command.State which is modified in place is
+  -- created as a thread-local variable and isn't modified again.
+  -- TODO figure out how to use `IO.CancelToken`s appropriately with the eval
+  -- stuff. Pantograph has it figured out...
+  let cmdStateBefore := (<-match env? with
     -- If we find it, go ahead and use it.
-    | some env => do
-      IO.println "cache hit"
-      let cmdStateBefore := Command.mkState env messages opts
-      return (cache, <- process inputCtx parserState cmdStateBefore)
-    -- Otherwise, process the header, and insert it into the cache.
+    | some env => return Command.mkState env messages opts
     | none => do
-      IO.println "cache miss"
+      -- Otherwise, process the header, and insert it into the cache.
       let (env, messages) ← processHeader header opts messages inputCtx
-      let cmdStateBefore := Command.mkState env messages opts
-      -- update the cache
-      cache.put (toString header) (env)
-      IO.println "added to cache"
-      return (cache, <- process inputCtx parserState cmdStateBefore)
-  where
-    process
-      (inputCtx : Parser.InputContext)
-      (parserState : Parser.ModuleParserState)
-      (cmdStateBefore : Command.State) : IO EvalResponse := do
-      IO.println "About to call stuff"
-      let (cmdStateAfter, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState cmdStateBefore
-      let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
-      let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
-      let tacs <- tactics trees
-      let jsontactics := Json.arr (tacs.toArray.map fun m => toJson m)
-      let response : EvalResponse := ⟨cmdStateAfter, toString msgs, toString tree, toString jsontactics⟩
-      return response
+      cache.put (toString header) env
+      return Command.mkState env messages opts)
+  return (cache, <- process inputCtx parserState cmdStateBefore)
+where
+  process
+    (inputCtx : Parser.InputContext)
+    (parserState : Parser.ModuleParserState)
+    (cmdStateBefore : Command.State) : IO EvalResponse := do
+    let (cmdStateAfter, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState cmdStateBefore
+    let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
+    let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
+    let tacs <- tactics trees
+    let jsontactics := Json.arr (tacs.toArray.map fun m => toJson m)
+    let response : EvalResponse := ⟨cmdStateAfter, toString msgs, toString tree, toString jsontactics⟩
+    return response
 
 -- def evaluate (input : String) (cmdState? : Option Command.State) (opts : Options := {}) (fileName : Option String := none)
 --   : IO EvalResponse := unsafe do

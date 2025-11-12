@@ -20,29 +20,26 @@ def parse_header(theorem: str):
 
 
 if __name__ == "__main__":
-    dataset = load_dataset("Goedel-LM/Lean-workbook-proofs", split="train", num_proc=1).select(range(50))
+    dataset = load_dataset("Goedel-LM/Lean-workbook-proofs", split="train", num_proc=1).select(range(10))
     dataset = dataset['full_proof']
     # dataset = pd.read_json("benchmark.json")["full_theorem"]
 
     start = time.time()
-    output, state_cache = pyle.evaluate_many(["import Mathlib\nimport Aesop\n--set up stuff"])
+    msgs, tree, err, tacs, duration, state_cache = pyle.evaluate("import Mathlib\nimport Aesop\n--set up stuff", timeout=0)
     import_end = time.time()
     print(f"Import took: {import_end - start}s")
 
     results = []
     problems = list(dataset)
-    output, state_cache = pyle.evaluate_many(list(dataset), state_cache, timeout=20_000)
-
-    # Parse output
-    for problem, (msgs, trees, err, tactics, duration) in zip(problems, output):
+    for problem in tqdm(problems, desc='Verifying'):
         header, body = parse_header(problem)
-        results.append((problem, header, body, msgs, trees, tactics, err, duration))
-
+        msgs, tree, err, tacs, duration, state_cache = pyle.evaluate(problem, state_cache=state_cache, timeout=0)
+        results.append((problem, header, body, msgs, tree, err, tacs, duration))
 
     end = time.time()
     df = pd.DataFrame.from_records(
         results,
-        columns=["full_theorem", "header", "body", "messages", "trees", "tactics", "errors", "time"],
+        columns=["full_theorem", "header", "body", "messages", "trees", "errors", "tactics", "time"],
     )
     print(df, flush=True)
     errs = df.apply(
