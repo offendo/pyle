@@ -15,4 +15,8 @@ pybind11::tuple py_evaluate(
   const std::string &lean_code,
   std::optional<pybind11::capsule> state_cache = std::nullopt,
   uint32_t timeout = 0);
+pybind11::tuple py_evaluate_many(
+  const std::vector<std::string> &lean_code,
+  std::optional<pybind11::capsule> state_cache = std::nullopt,
+  uint32_t timeout = 0);
 } // namespace pyle

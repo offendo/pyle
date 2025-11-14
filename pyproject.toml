@@ -16,6 +16,9 @@ authors = [
 ]
 requires-python = ">=3.8"
 license = { text = "MIT" }
+dependencies = [
+    "more-itertools>=10.8.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/offendo/pyle"
@@ -38,4 +41,5 @@ dev-dependencies = [
     "pandas>=2.3.3",
     "tqdm>=4.67.1",
     "cppclean>=0.13",
+    "dill>=0.4.0",
 ]

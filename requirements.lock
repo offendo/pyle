@@ -10,3 +10,5 @@
 #   universal: false
 
 -e file:.
+more-itertools==10.8.0
+    # via pyle

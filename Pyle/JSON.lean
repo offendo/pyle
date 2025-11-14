@@ -133,6 +133,17 @@ structure CommandResponse where
   infotree : Option Json := none
 deriving FromJson
 
+
+/- Evaluation response to return to C/Python
+-/
+structure EvalResponse where
+  messages : Json := Json.mkObj []
+  trees : Json  := Json.mkObj []
+  tactics : Json  := Json.mkObj []
+  error : Json  := Json.str ""
+deriving ToJson, FromJson
+
+
 def Json.nonemptyList [ToJson α] (k : String) : List α → List (String × Json)
   | [] => []
   | l  => [⟨k, toJson l⟩]

@@ -15,4 +15,11 @@ PYBIND11_MODULE(pyle, m) {
     py::arg("lean_code"),
     py::arg("state_cache") = py::none(),
     py::arg("timeout") = 0);
+  m.def(
+    "evaluate_many",
+    &pyle::py_evaluate_many,
+    R"(Evaluates input lean code. Times out after `timeout` ms.)",
+    py::arg("lean_code"),
+    py::arg("state_cache") = py::none(),
+    py::arg("timeout") = 0);
 }
