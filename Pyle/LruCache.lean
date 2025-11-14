@@ -101,28 +101,42 @@ private def evictIfNeeded [BEq α] [Hashable α]
 /-- Get a value by key and mark it as most recently used. -/
 def LRU.get [BEq α] [Hashable α] (c : LRU α β) (k : α) : IO (Option β) := do
   c.ref.atomically (fun ref => do
+    IO.println s!"(get: {<-IO.getTID}) in thread"
     let st <- ref.get
     match st.table.get? k with
     | none => return none
     | some (v, _, _) =>
+      IO.println s!"(get: {<-IO.getTID}) matched key"
       let st1 := detach st k
+      IO.println s!"(get: {<-IO.getTID}) detached"
       let st2 := attachHead st1 k v
+      IO.println s!"(get: {<-IO.getTID}) attached"
       ref.set st2
+      IO.println s!"(get: {<-IO.getTID}) ref.set"
       return some v)
 
 /-- Insert or update a key–value pair. Evicts least recently used if over capacity. -/
 def LRU.put [BEq α] [Hashable α] (c : LRU α β) (k : α) (v : β) : IO Unit := do
+  IO.println s!"(put: {<-IO.getTID}) in thread"
   c.ref.atomically (fun ref => do
     let st ← ref.get
+    IO.println s!"(put: {<-IO.getTID}) got st"
     let st1 := detach st k -- remove if it exists
+    IO.println s!"(put: {<-IO.getTID}) detached"
     let st2 := attachHead st1 k v
+    IO.println s!"(put: {<-IO.getTID}) attached"
     let (st3, _) := evictIfNeeded st2
-    ref.set st3)
+    IO.println s!"(put: {<-IO.getTID}) evicted"
+    ref.set st3
+    IO.println s!"(put: {<-IO.getTID}) ref.set"
+    )
 
 /-- Check whether the cache contains a key (does not update recency). -/
 def LRU.contains [BEq α] [Hashable α] (c : LRU α β) (k : α) : IO Bool := do
+  IO.println s!"(contains: {<-IO.getTID}) checking containment"
   c.ref.atomically (fun ref => do
     let st <- ref.get
+    IO.println s!"(contains: {<-IO.getTID}) got st"
     return st.table.contains k)
 
 /-- Clear the entire cache. -/
@@ -132,7 +146,8 @@ def LRU.clear [BEq α] [Hashable α] (c : LRU α β) : IO Unit := do
     ref.set { capacity := st.capacity })
 
 /-- Return the number of elements currently in the cache. -/
-def LRU.size [BEq α] [Hashable α] (c : LRU α β) : IO Nat :=
+def LRU.size [BEq α] [Hashable α] (c : LRU α β) : IO Nat := do
+  IO.println "checking size"
   c.ref.atomically (fun ref => do
     let st <- ref.get
     return st.size)

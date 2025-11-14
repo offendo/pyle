@@ -18,6 +18,7 @@ def ppTactic (ctx : ContextInfo) (stx : Syntax) : IO Format :=
 def tactics (trees : List InfoTree) : IO (List Pyle.Tactic) :=
   trees.flatMap InfoTree.tactics |>.mapM
     fun ⟨ctx, stx, rootGoals, goals, pos, endPos, ns⟩ => do
+      IO.println s!"{<-IO.getTID} [in tactics map func]"
       -- let proofState := some (← ProofSnapshot.create ctx none env? goals rootGoals)
       let goals := s!"{(← ctx.ppGoals goals)}".trim
       let tactic := Format.pretty (← ppTactic ctx stx)
@@ -78,9 +79,18 @@ def processCommand : FrontendM Bool := do
   let ictx ← getInputContext
   let pstate ← getParserState
   let scope := cmdState.scopes.head!
-  let pmctx := { env := cmdState.env, options := scope.opts, currNamespace := scope.currNamespace, openDecls := scope.openDecls }
-  match profileit "parsing" scope.opts fun _ => Parser.parseCommand ictx pmctx pstate cmdState.messages with
-  | (cmd, ps, messages) =>
+  let pmctx := {
+    env := cmdState.env,
+    options := scope.opts,
+    currNamespace := scope.currNamespace,
+    openDecls := scope.openDecls
+  }
+  let msgs := Json.arr (← cmdState.messages.toArray.mapM fun m => m.toJson)
+  IO.println s!"({<-IO.getTID}): About to run profiler: Previous messages: {msgs}"
+  let profileOutput := profileit "parsing" scope.opts fun _ => Parser.parseCommand ictx pmctx pstate cmdState.messages
+  IO.println s!"({<-IO.getTID}): Ran profiler!"
+  match profileOutput with
+  | (cmd, ps, messages) => do
     modify fun s => { s with commands := s.commands.push cmd }
     setParserState ps
     setMessages messages
@@ -121,12 +131,14 @@ open Lean.Elab.IO
 open Pyle.Frontend
 def go
   (cache : LRU String Environment)
-  (inputCtx : Parser.InputContext)
-  (header : Syntax)
-  (parserState : Parser.ModuleParserState)
-  (messages : MessageLog)
+  (input : String)
   (timeout : UInt32)
   : IO EvalResponse := do
+
+  let fileName   := "<input>"
+  let inputCtx   := Parser.mkInputContext input fileName
+  let (header, parserState, messages) ← Parser.parseHeader inputCtx
+
   let env? <- cache.get (toString header)
   let opts : Options := {}
   let cmdStateBefore := (<-match env? with
@@ -144,10 +156,13 @@ def go
   /- NOTE not sure if this init -> call .run kind of paradigm is the smartest thing to do.
   -- Might be something cleaner. -/
   let initFrontendState := Frontend.State.mk cmdStateBefore parserState parserState.pos Array.empty
-  let cancelTk := (<- IO.CancelToken.new)
-  let initContext := Context.mk inputCtx (some cancelTk)
-  if timeout > 0 then
+  let initContext <- (if timeout > 0 then do
+    let cancelTk := (<- IO.CancelToken.new)
+    let initContext := Context.mk inputCtx (some cancelTk)
     let _ <- runCancelTokenWithTimeout cancelTk timeout
+    return initContext
+  else
+    return (Context.mk inputCtx none))
   -- TODO maybe return this finalState for iterative computation
   let (response, _) <- (process.run initContext).run initFrontendState
   return response
@@ -157,11 +172,11 @@ where
     let (messages, trees, err) <- (try
       let (_, messages, trees) ← processCommandsWithInfoTrees
       return (messages, trees, "")
-    catch e : IO.Error => do
-      let messages : List Lean.Message := []
-      let trees : List InfoTree := []
-      let err := s!"error: timeout after {timeout}ms"
-      return (messages, trees, err))
+    catch _ : IO.Error => do
+      let m : List Lean.Message := []
+      let t : List InfoTree := []
+      let e := s!"error: timeout after {timeout}ms"
+      return (m, t, e))
 
     -- Parse output
     let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
@@ -188,13 +203,11 @@ def evaluate_one
   (cache? : Option (LRU String Environment))
   (timeout : UInt32 := 0)
   : IO $ (LRU String Environment) × String := do
-  let fileName   := "<input>"
-  let inputCtx   := Parser.mkInputContext input fileName
-  let (header, parserState, messages) ← Parser.parseHeader inputCtx
   let cache <- (match cache? with
     | some c => return c
     | none => return <-LRU.mkEmpty 5)
-  let response := <- go cache inputCtx header parserState messages timeout
+  IO.println s!"Here now: {<-IO.getTID}"
+  let response := <- go cache input timeout
   return (cache, toString $ toJson response)
 
 @[export lean_evaluate_batch]
@@ -203,17 +216,11 @@ def evaluate_batch
   (cache? : Option (LRU String Environment))
   (timeout: UInt32 := 0)
   : IO $ (LRU String Environment) × String := do
-  let fileName  := "<input>"
-  let inputCtxs  := inputs.map (fun input => Parser.mkInputContext input fileName)
-  let headers ← inputCtxs.mapM (fun ctx => do
-    return <-Parser.parseHeader ctx)
   let cache <- (match cache? with
     | some c => return c
     | none => return <-LRU.mkEmpty 5)
-  let taskFns := (Array.zip inputCtxs headers).map (
-    fun (ctx, header, parserState, msgs) => (fun () => do
-      return (<-go cache ctx header parserState msgs timeout)
-      )
+  let taskFns := inputs.map (
+    fun input => (fun () => do return (<-go cache input timeout) )
     )
   let tasks <- taskFns.mapM (fun t => IO.asTask (t ()) Task.Priority.max)
   let responses := collate (tasks.map fun t => t.get)

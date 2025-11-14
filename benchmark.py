@@ -25,7 +25,7 @@ if __name__ == "__main__":
     # dataset = pd.read_json("benchmark.json")["full_theorem"]
 
     start = time.time()
-    msgs, tree, err, tacs, duration, state_cache = pyle.evaluate("import Mathlib\nimport Aesop\n--set up stuff", timeout=0)
+    response, duration, state_cache = pyle.evaluate("import Mathlib\nimport Aesop\n--set up stuff", timeout=0)
     import_end = time.time()
     print(f"Import took: {import_end - start}s")
 
@@ -33,19 +33,19 @@ if __name__ == "__main__":
     problems = list(dataset)
     for problem in tqdm(problems, desc='Verifying'):
         header, body = parse_header(problem)
-        msgs, tree, err, tacs, duration, state_cache = pyle.evaluate(problem, state_cache=state_cache, timeout=0)
-        results.append((problem, header, body, msgs, tree, err, tacs, duration))
+        response, duration, state_cache = pyle.evaluate(problem, state_cache=state_cache, timeout=20_000)
+        results.append((problem, header, body, json.loads(response), duration))
 
     end = time.time()
     df = pd.DataFrame.from_records(
         results,
-        columns=["full_theorem", "header", "body", "messages", "trees", "errors", "tactics", "time"],
+        columns=["full_theorem", "header", "body", "response", "time"],
     )
     print(df, flush=True)
-    errs = df.apply(
-        lambda row: len(row.errors) == 0 and all([x["severity"] != "error" for x in json.loads(row.messages or "{}")]), axis=1
-    )
-    print(errs.value_counts() / len(df), flush=True)
+    # errs = df.apply(
+    #     lambda row: len(row.errors) == 0 and all([x["severity"] != "error" for x in json.loads(row.messages or "{}")]), axis=1
+    # )
+    # print(errs.value_counts() / len(df), flush=True)
 
     print(f"Time taken: {end - import_end}s ({import_end - start}s)", flush=True)
     df.to_json("benchmark.json")

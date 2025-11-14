@@ -11,16 +11,21 @@
 #include <chrono>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <pyerrors.h>
 #include <sstream>
 #include <stdio.h>
 #include <string>
+#include <thread>
 
 using namespace std::chrono;
 using namespace indicators;
 using result_t =
   std::tuple<std::string, std::string, std::string, std::string, long long>;
+
+const int N_THREADS = 2;
+std::mutex eval_mutex;
 
 namespace py = pybind11;
 
@@ -150,31 +155,57 @@ py::tuple py_evaluate_many(
   // extract the state cache possibly
   lean_object *state_cache =
     capsule.has_value() ? unpack_lean_object(capsule.value()) : nullptr;
-  if (state_cache) {
-    lean_inc(state_cache);
+
+  // launch the pool
+  ThreadPool pool(N_THREADS);
+
+  // store the futures
+  std::vector<std::future<std::tuple<std::string, long long>>> futures;
+
+  // launch the jobs
+  for (const std::string code : lean_code) {
+    auto fut = pool.enqueue([&code, &state_cache, timeout]() {
+      // Run the actual evaluation, and grab the result out
+      // make sure evaluate_one doesn't consume the cache
+      auto start = high_resolution_clock::now();
+      if (state_cache) {
+        lean_inc(state_cache);
+      }
+      lean_object *lean_response = evaluate_one(code, state_cache, timeout);
+      auto stop = high_resolution_clock::now();
+      auto duration = duration_cast<milliseconds>(stop - start).count();
+      auto [json, new_cache] = parse_lean_output(lean_response);
+      if (new_cache) {
+        lean_inc(new_cache);
+      }
+      {
+        std::lock_guard<std::mutex> lock(eval_mutex);
+        state_cache = new_cache;
+      }
+      return std::make_tuple(json, duration);
+    });
+    futures.push_back(std::move(fut));
   }
-
-  // Run the actual evaluation, and grab the result out
-  auto start = high_resolution_clock::now();
-  lean_object *lean_response = evaluate_batch(lean_code, state_cache, timeout);
-  auto stop = high_resolution_clock::now();
-  auto duration = duration_cast<milliseconds>(stop - start).count();
-
-  auto [json, new_state_cache] = parse_lean_output(lean_response);
 
   // This step is a little subtlely weird. We call lean_inc to on the
   // new_state to increment the ref count. Then we call
   // lean_dec(lean_response) which decrements new_state's ref count, since
   // it's a child object of lean_response. This balances the change of
   // new_state's refs to 0 so we keep it in memory.
-  if (new_state_cache) {
-    lean_inc(new_state_cache);
+  if (state_cache) {
+    lean_inc(state_cache);
   }
-  py::capsule return_capsule = pack_lean_object(new_state_cache);
-  if (lean_response) {
-    lean_dec(lean_response);
+
+  std::vector<std::string> responses(lean_code.size());
+  std::vector<long long> durations(lean_code.size());
+  for (int i = 0; i < futures.size(); ++i) {
+    auto [response, duration] = futures[i].get();
+    responses[i] = response;
+    durations[i] = duration;
   }
-  return py::make_tuple(json, duration, return_capsule);
+
+  py::capsule return_capsule = pack_lean_object(state_cache);
+  return py::make_tuple(responses, durations, return_capsule);
 }
 
 } // namespace pyle

@@ -9,5 +9,5 @@ require "mathlib"
 @[default_target]
 lean_lib Pyle where
   defaultFacets := #[LeanLib.staticFacet]
-  buildType := Lake.BuildType.release
-  moreLeancArgs := #["-Wall", "-O3"]
+  buildType := Lake.BuildType.debug
+  moreLeancArgs := #["-Wall", "-O0", "-g"]
