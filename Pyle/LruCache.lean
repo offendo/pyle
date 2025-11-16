@@ -8,20 +8,21 @@ Stores up to `capacity` key–value pairs of type `α → β`.
 When inserting beyond capacity, the least recently used entry is evicted.
 -/
 structure LRUState (α β : Type) [BEq α] [Hashable α] where
-  capacity : Nat
+  capacity : UInt32
   table    : HashMap α (β × Option α × Option α) := {}
     -- map: key -> (value, prevKey?, nextKey?)
   head     : Option α := none
   tail     : Option α := none
-  size     : Nat := 0
+  size     : UInt32 := 0
 deriving Inhabited
 
 /-- A mutable LRU handle stored in an IO.Ref. -/
 structure LRU (α β : Type) [BEq α] [Hashable α] where
   ref : Std.Mutex (LRUState α β)
 
+
 /-- Create a new LRU cache with a given capacity (> 0). -/
-def LRU.mkEmpty [BEq α] [Hashable α] (capacity : Nat) : IO (LRU α β) := do
+def LRU.mkEmpty [BEq α] [Hashable α] (capacity : UInt32) : IO (LRU α β) := do
   if capacity == 0 then
     throw (IO.userError "LRU.mkEmpty: capacity must be > 0")
   let st : LRUState α β := { capacity := capacity }
@@ -99,45 +100,37 @@ private def evictIfNeeded [BEq α] [Hashable α]
         (st', some (t, v))
 
 /-- Get a value by key and mark it as most recently used. -/
-def LRU.get [BEq α] [Hashable α] (c : LRU α β) (k : α) : IO (Option β) := do
+def LRU.get [BEq α] [Hashable α] [ToString α] (c : LRU α β) (k : α) : IO (Option β) := do
   c.ref.atomically (fun ref => do
-    IO.println s!"(get: {<-IO.getTID}) in thread"
     let st <- ref.get
+    let got := st.table.get? k
     match st.table.get? k with
-    | none => return none
+    | none => do
+      return none
     | some (v, _, _) =>
-      IO.println s!"(get: {<-IO.getTID}) matched key"
       let st1 := detach st k
-      IO.println s!"(get: {<-IO.getTID}) detached"
       let st2 := attachHead st1 k v
-      IO.println s!"(get: {<-IO.getTID}) attached"
       ref.set st2
-      IO.println s!"(get: {<-IO.getTID}) ref.set"
       return some v)
-
-/-- Insert or update a key–value pair. Evicts least recently used if over capacity. -/
-def LRU.put [BEq α] [Hashable α] (c : LRU α β) (k : α) (v : β) : IO Unit := do
-  IO.println s!"(put: {<-IO.getTID}) in thread"
-  c.ref.atomically (fun ref => do
-    let st ← ref.get
-    IO.println s!"(put: {<-IO.getTID}) got st"
-    let st1 := detach st k -- remove if it exists
-    IO.println s!"(put: {<-IO.getTID}) detached"
-    let st2 := attachHead st1 k v
-    IO.println s!"(put: {<-IO.getTID}) attached"
-    let (st3, _) := evictIfNeeded st2
-    IO.println s!"(put: {<-IO.getTID}) evicted"
-    ref.set st3
-    IO.println s!"(put: {<-IO.getTID}) ref.set"
-    )
 
 /-- Check whether the cache contains a key (does not update recency). -/
 def LRU.contains [BEq α] [Hashable α] (c : LRU α β) (k : α) : IO Bool := do
-  IO.println s!"(contains: {<-IO.getTID}) checking containment"
   c.ref.atomically (fun ref => do
     let st <- ref.get
-    IO.println s!"(contains: {<-IO.getTID}) got st"
     return st.table.contains k)
+
+/-- Insert or update a key–value pair. Evicts least recently used if over capacity. -/
+def LRU.put [BEq α] [Hashable α] (c : LRU α β) (k : α) (v : β) : IO Unit := do
+  if (<-LRU.contains c k) then
+    return
+  c.ref.atomically (fun ref => do
+    let st ← ref.get
+    let st1 := detach st k -- remove if it exists
+    let st2 := attachHead st1 k v
+    let (st3, _) := evictIfNeeded st2
+    ref.set st3
+    )
+
 
 /-- Clear the entire cache. -/
 def LRU.clear [BEq α] [Hashable α] (c : LRU α β) : IO Unit := do
@@ -146,11 +139,12 @@ def LRU.clear [BEq α] [Hashable α] (c : LRU α β) : IO Unit := do
     ref.set { capacity := st.capacity })
 
 /-- Return the number of elements currently in the cache. -/
-def LRU.size [BEq α] [Hashable α] (c : LRU α β) : IO Nat := do
-  IO.println "checking size"
+def LRU.size [BEq α] [Hashable α] (c : LRU α β) : IO UInt32 := do
   c.ref.atomically (fun ref => do
     let st <- ref.get
-    return st.size)
+    let s := st.size
+    return s
+    )
 
 /-- Simple example with string→int cache. -/
 def example1 : IO Unit := do
@@ -167,15 +161,5 @@ def example1 : IO Unit := do
   IO.println s!"get c: {(← cache.get "c")}"
   IO.println s!"contains a: {(← cache.contains "a")}"
   IO.println s!"size: {(← cache.size)}"
-
-@[export print_cache]
-def LRU.printCache [ToString a] [BEq a] [Hashable a] (cache : LRU a b) : IO Unit := do
-  IO.println "Cache summary:"
-  IO.println s!"*** Size: {<-cache.size}"
-  cache.ref.atomically (fun ref => do
-    let st <- ref.get
-    let keys := st.table.keys
-    IO.println s!"*** Keys: {keys}"
-    )
 
 -- #eval example1

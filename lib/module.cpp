@@ -9,17 +9,12 @@ PYBIND11_MODULE(pyle, m) {
   m.doc() = "Python interface for a Lean interpreter.";
 
   m.def(
-    "evaluate",
-    &pyle::py_evaluate,
-    R"(Evaluates input lean code. Times out after `timeout` ms.)",
-    py::arg("lean_code"),
-    py::arg("state_cache") = py::none(),
-    py::arg("timeout") = 0);
-  m.def(
     "evaluate_many",
     &pyle::py_evaluate_many,
     R"(Evaluates input lean code. Times out after `timeout` ms.)",
     py::arg("lean_code"),
     py::arg("state_cache") = py::none(),
-    py::arg("timeout") = 0);
+    py::arg("timeout") = 0,
+    py::arg("n_workers") = 1,
+    py::arg("cache_capacity") = 5);
 }

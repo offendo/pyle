@@ -1,4 +1,3 @@
-#include "pyle/evaluate.hpp"
 #include "indicators/cursor_control.hpp"
 #include "indicators/progress_bar.hpp"
 #include "indicators/setting.hpp"
@@ -13,19 +12,19 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <pybind11/stl.h>
 #include <pyerrors.h>
 #include <sstream>
 #include <stdio.h>
 #include <string>
-#include <thread>
+#include <sys/types.h>
 
 using namespace std::chrono;
 using namespace indicators;
 using result_t =
-  std::tuple<std::string, std::string, std::string, std::string, long long>;
+  std::tuple<std::string, std::string, std::string, std::string, long>;
 
-const int N_THREADS = 2;
-std::mutex eval_mutex;
+std::mutex cache_mutex;
 
 namespace py = pybind11;
 
@@ -75,136 +74,84 @@ lean_obj_res evaluate_one(
   return out;
 }
 
-lean_obj_res evaluate_batch(
-  const std::vector<std::string> &lean_code,
-  lean_obj_arg state_cache,
-  uint32_t timeout) {
-
-  // Box the cstring into a lean_object. This object will be consumed by the
-  // function
-  lean_object *inputs = lean_mk_array_of_strings(lean_code);
-
-  // Wrap the state in an Option type to pass to Lean
-  lean_object *opt_state_cache;
-  if (state_cache) {
-    // opt_state = some state
-    opt_state_cache = lean_alloc_ctor(1, 1, 0);
-    lean_ctor_set(opt_state_cache, 0, state_cache);
-  } else {
-    // opt_state = none
-    opt_state_cache = lean_alloc_ctor(0, 0, 0);
-  }
-
-  // Return the lean output. Note that `evaluate` here is not pyle::evaluate()
-  // - i.e., this is not a recursive call.
-  auto out = lean_evaluate_batch(inputs, opt_state_cache, timeout);
-  return out;
-}
-
-std::tuple<std::string, lean_object *>
+std::tuple<std::string, lean_object *, lean_object *>
 parse_lean_output(b_lean_obj_arg lean_response) {
   lean_object *product_obj = lean_ctor_get(lean_response, 0);
 
-  // cache X response
-  lean_object *cache = lean_ctor_get(product_obj, 0);
-  lean_object *response = lean_ctor_get(product_obj, 1);
+  // response X header env X final state
+  lean_object *response = lean_ctor_get(product_obj, 0);
+  lean_object *header_env_and_final_state = lean_ctor_get(product_obj, 1);
+  lean_object *header_env = lean_ctor_get(header_env_and_final_state, 0);
+  lean_object *final_state = lean_ctor_get(header_env_and_final_state, 1);
   std::string json_response = lean_string_cstr(response);
-  return std::make_tuple(json_response, cache);
-}
-
-py::tuple py_evaluate(
-  const std::string &lean_code,
-  std::optional<py::capsule> capsule,
-  uint32_t timeout) {
-
-  // extract the state cache possibly
-  lean_object *state_cache =
-    capsule.has_value() ? unpack_lean_object(capsule.value()) : nullptr;
-  if (state_cache) {
-    lean_inc(state_cache);
-  }
-
-  // Run the actual evaluation, and grab the result out
-  auto start = high_resolution_clock::now();
-  lean_object *lean_response = evaluate_one(lean_code, state_cache, timeout);
-  auto stop = high_resolution_clock::now();
-  auto duration = duration_cast<milliseconds>(stop - start).count();
-
-  auto [json_response, new_state_cache] = parse_lean_output(lean_response);
-
-  // This step is a little subtlely weird. We call lean_inc to on the
-  // new_state to increment the ref count. Then we call
-  // lean_dec(lean_response) which decrements new_state's ref count, since
-  // it's a child object of lean_response. This balances the change of
-  // new_state's refs to 0 so we keep it in memory.
-  if (new_state_cache) {
-    lean_inc(new_state_cache);
-  }
-  py::capsule return_capsule = pack_lean_object(new_state_cache);
-  if (lean_response) {
-    lean_dec(lean_response);
-  }
-  return py::make_tuple(json_response, duration, return_capsule);
+  return std::make_tuple(json_response, header_env, final_state);
 }
 
 py::tuple py_evaluate_many(
   const std::vector<std::string> &lean_code,
   std::optional<py::capsule> capsule,
-  uint32_t timeout) {
+  uint32_t timeout,
+  uint32_t n_workers,
+  uint32_t cache_capacity) {
 
-  // extract the state cache possibly
-  lean_object *state_cache =
-    capsule.has_value() ? unpack_lean_object(capsule.value()) : nullptr;
+  // Unwrap the cache
+  std::unique_ptr<Cache> state_cache = capsule.has_value()
+                                         ? unpack_cache(capsule.value())
+                                         : make_cache(cache_capacity);
 
-  // launch the pool
-  ThreadPool pool(N_THREADS);
-
-  // store the futures
-  std::vector<std::future<std::tuple<std::string, long long>>> futures;
-
-  // launch the jobs
-  for (const std::string code : lean_code) {
-    auto fut = pool.enqueue([&code, &state_cache, timeout]() {
-      // Run the actual evaluation, and grab the result out
-      // make sure evaluate_one doesn't consume the cache
-      auto start = high_resolution_clock::now();
-      if (state_cache) {
-        lean_inc(state_cache);
-      }
-      lean_object *lean_response = evaluate_one(code, state_cache, timeout);
-      auto stop = high_resolution_clock::now();
-      auto duration = duration_cast<milliseconds>(stop - start).count();
-      auto [json, new_cache] = parse_lean_output(lean_response);
-      if (new_cache) {
-        lean_inc(new_cache);
-      }
-      {
-        std::lock_guard<std::mutex> lock(eval_mutex);
-        state_cache = new_cache;
-      }
-      return std::make_tuple(json, duration);
-    });
-    futures.push_back(std::move(fut));
-  }
-
-  // This step is a little subtlely weird. We call lean_inc to on the
-  // new_state to increment the ref count. Then we call
-  // lean_dec(lean_response) which decrements new_state's ref count, since
-  // it's a child object of lean_response. This balances the change of
-  // new_state's refs to 0 so we keep it in memory.
-  if (state_cache) {
-    lean_inc(state_cache);
-  }
-
+  // Output vectors
+  std::vector<std::future<std::tuple<std::string, long>>> futures;
   std::vector<std::string> responses(lean_code.size());
-  std::vector<long long> durations(lean_code.size());
-  for (int i = 0; i < futures.size(); ++i) {
-    auto [response, duration] = futures[i].get();
-    responses[i] = response;
-    durations[i] = duration;
+  std::vector<long> durations(lean_code.size());
+
+  // Scope to release python GIL
+  {
+
+    // launch the pool
+    ThreadPool pool(n_workers);
+    py::gil_scoped_release release;
+
+    // launch the jobs
+    int i = 0;
+    for (const std::string &code : lean_code) {
+      auto fut = pool.enqueue([code, &state_cache, timeout, &i]() {
+        // Step 1. Get the environment
+        auto [header, body] = parse_header_and_body(code);
+        std::shared_ptr<lean_object> env = state_cache->get(header);
+
+        // Step 2. Run the lean code, and parse the output
+        auto start = high_resolution_clock::now();
+        lean_object *lean_response = evaluate_one(code, env.get(), timeout);
+        auto duration =
+          duration_cast<milliseconds>(high_resolution_clock::now() - start)
+            .count();
+        auto [json, header_env, final_state] = parse_lean_output(lean_response);
+
+        // Step 3. Run the cache update.
+        lean_inc(header_env);
+        state_cache->put(header, header_env);
+        return std::make_tuple(json, duration);
+      });
+      futures.push_back(std::move(fut));
+    }
+
+    std::unique_ptr<ProgressBar> pbar = make_progress_bar();
+    show_console_cursor(false);
+    std::stringstream ss;
+    for (size_t i = 0; i < futures.size(); ++i) {
+      auto [response, duration] = futures[i].get();
+      responses[i] = response;
+      durations[i] = duration;
+      pbar->set_progress(100 * (i + 1) / responses.size());
+      // Format a postfix string
+      ss << "(" << i + 1 << "/" << responses.size() << ")";
+      pbar->set_option(option::PostfixText{ss.str()});
+      ss.str("");
+      ss.clear();
+    }
   }
 
-  py::capsule return_capsule = pack_lean_object(state_cache);
+  py::capsule return_capsule = pack_cache(state_cache.release());
   return py::make_tuple(responses, durations, return_capsule);
 }
 

@@ -31,7 +31,8 @@ void trim(std::string &s) {
  */
 // TODO I think this function isn't working quite right. Need to test and make
 // sure the header/body is being split off properly.
-std::pair<std::string, std::string> parse_header_and_body(std::string s) {
+std::pair<std::string, std::string>
+parse_header_and_body(const std::string &s) {
   auto header = std::vector<std::string>{};
   auto body = std::vector<std::string>{};
   auto ss = std::stringstream{s};

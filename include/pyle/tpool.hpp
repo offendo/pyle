@@ -1,4 +1,5 @@
 #pragma once
+#include "lean/lean.h"
 #include "pyle/lean.hpp"
 #include <condition_variable>
 #include <functional>
@@ -8,6 +9,7 @@
 #include <queue>
 #include <stdexcept>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 class ThreadPool {
@@ -15,11 +17,7 @@ public:
   explicit ThreadPool(size_t thread_count) : stop(false) {
     for (size_t i = 0; i < thread_count; ++i) {
       workers.emplace_back([this]() {
-        // initialize
-        {
-          std::lock_guard<std::mutex> lock(mutex);
-          lean_initialize_thread();
-        }
+        lean_initialize_thread();
         // Worker loop which runs forever
         while (true) {
           std::function<void()> task;
@@ -29,7 +27,7 @@ public:
             cv.wait(lock, [this]() { return stop || !tasks.empty(); });
 
             if (stop && tasks.empty())
-              return;
+              break;
 
             task = std::move(tasks.front());
             tasks.pop();
@@ -37,11 +35,7 @@ public:
 
           task(); // execute
         }
-        // finalize
-        {
-          std::lock_guard<std::mutex> lock(mutex);
-          lean_finalize_thread();
-        }
+        lean_finalize_thread();
       });
     }
   }
@@ -85,8 +79,9 @@ public:
     cv.notify_all();
 
     for (std::thread &t : workers)
-      if (t.joinable())
+      if (t.joinable()) {
         t.join();
+      }
   }
 
 private:
@@ -95,5 +90,6 @@ private:
 
   std::mutex mutex;
   std::condition_variable cv;
+  std::condition_variable shutdown_cv;
   bool stop;
 };
