@@ -22,7 +22,6 @@ void initialize() {
   lean_init_task_manager();
   lean_io_mark_end_initialization();
   run_search_path_init();
-  std::cout << "Initialized!" << std::endl;
 }
 
 } // namespace pyle

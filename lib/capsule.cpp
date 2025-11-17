@@ -1,5 +1,4 @@
 #include "pyle/capsule.hpp"
-#include <iostream>
 
 namespace pyle {
 

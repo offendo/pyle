@@ -4,6 +4,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <pybind11/pybind11.h>
 #include <string>
 #include <unordered_map>
 
@@ -22,7 +23,9 @@ public:
   put(const std::string header, lean_object *state);
   void erase(const std::string header);
   void erase_all();
+  pybind11::dict to_dict();
 };
 
-std::unique_ptr<Cache> make_cache(uint32_t capacity);
+std::shared_ptr<Cache> make_cache(uint32_t capacity);
+std::shared_ptr<Cache> from_dict(pybind11::dict dict, size_t capacity);
 } // namespace pyle

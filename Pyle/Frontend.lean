@@ -142,29 +142,19 @@ def evaluate_one
   | none => do
     -- Otherwise, process the header, and insert it into the cache.
     let (env, messages) ← processHeader header opts messages inputCtx
-    -- cache.put (toString header) env
     return Command.mkState env messages opts)
 
   -- Run commands
-  let (newState, messages, trees, err) <- (do
-    -- start a timer to cancel the job if needed
-    let mut err := ""
-    let ((cancelTk? : Option IO.CancelToken), (task?)) := (←
-      if timeout > 0 then
-        do
-          let cancelTk ← IO.CancelToken.new
-          let task ← IO.asTask (do
-            IO.sleep timeout
-            cancelTk.set
-          ) Task.Priority.dedicated
-          return (some cancelTk, some task)
-      else
-        return (none, none))
-    let (state, messages, trees) ← processCommandsWithInfoTrees inputCtx parserState cmdStateBefore cancelTk?
-    -- cancel the timer if it's still going
-    if let some task := task? then
-      IO.cancel task
-    return (some state, messages, trees, err)
+  let (newState, messages, trees, err) <- (if timeout > 0 then
+    do
+      -- start a timer to cancel the job if needed
+      let result <- runWithTimeout (fun () => processCommandsWithInfoTrees inputCtx parserState cmdStateBefore none) timeout
+      (match result with
+        | .error err => return (none, [], [], err.toString)
+        | .ok (state, msgs, trees) => return (some state, msgs, trees, ""))
+    else do
+      let (state, msgs, trees) <- processCommandsWithInfoTrees inputCtx parserState cmdStateBefore none
+      pure (some state, msgs, trees, "")
   )
   -- Parse output
   let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)

@@ -1,16 +1,19 @@
 #include "pyle/cache.hpp"
+#include "pyle/capsule.hpp"
 #include <algorithm>
+#include <cstdio>
 #include <iostream>
 #include <lean/lean.h>
 #include <memory>
 #include <mutex>
 #include <string>
 
+namespace py = pybind11;
 namespace pyle {
 
 /* Makes a cache object and returns a unique pointer to it. */
-std::unique_ptr<Cache> make_cache(uint32_t capacity) {
-  return std::make_unique<Cache>(capacity);
+std::shared_ptr<Cache> make_cache(uint32_t capacity) {
+  return std::make_shared<Cache>(capacity);
 };
 
 /* Get state associated with header. */
@@ -60,8 +63,8 @@ Cache::put(const std::string header, lean_object *state) {
 
     // otherwise insert it
     auto new_state = std::shared_ptr<lean_object>(state, [](lean_object *s) {
-      std::cout << "Deleting shared pointer. Ref count: " << s->m_rc
-                << std::endl;
+      // std::cout << "Deleting shared pointer. Ref count: " << s->m_rc <<
+      // std::endl;
       lean_dec(s);
     });
     cache.insert_or_assign(header, new_state);
@@ -93,6 +96,26 @@ void Cache::erase_all() {
   for (auto &it : cache) {
     erase(it.first);
   }
+}
+
+std::shared_ptr<Cache> from_dict(pybind11::dict dict, size_t capacity) {
+  std::shared_ptr<Cache> cache = make_cache(capacity);
+  for (auto &pair : dict) {
+    auto key = pair.first.cast<std::string>();
+    lean_object *env = static_cast<lean_object *>(
+      PyCapsule_GetPointer(pair.second.ptr(), "lean_object"));
+    cache->put(key, env);
+  }
+  return cache;
+}
+pybind11::dict Cache::to_dict() {
+  std::lock_guard<std::mutex> lock(mutex);
+  py::dict dict;
+  for (auto &[header, env] : cache) {
+    py::capsule capsule = pack_lean_object(env.get());
+    dict[py::cast(header)] = capsule;
+  }
+  return dict;
 }
 
 } // namespace pyle

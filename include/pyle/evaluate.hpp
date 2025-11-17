@@ -11,13 +11,15 @@ namespace py = pybind11;
 
 namespace pyle {
 
-py::tuple py_evaluate(
+py::tuple py_evaluate_one(
   const std::string &lean_code,
-  std::optional<pybind11::capsule> state_cache = std::nullopt,
-  uint32_t timeout = 0);
+  std::optional<py::dict> dict,
+  uint32_t timeout,
+  uint32_t cache_capacity);
+
 py::tuple py_evaluate_many(
   const std::vector<std::string> &lean_code,
-  std::optional<pybind11::capsule> state_cache = std::nullopt,
+  std::optional<py::dict> dict,
   uint32_t timeout = 0,
   uint32_t n_workers = 1,
   uint32_t cache_capacity = 0);

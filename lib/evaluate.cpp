@@ -86,18 +86,45 @@ parse_lean_output(b_lean_obj_arg lean_response) {
   std::string json_response = lean_string_cstr(response);
   return std::make_tuple(json_response, header_env, final_state);
 }
+py::tuple py_evaluate_one(
+  const std::string &lean_code,
+  std::optional<py::dict> opt_cache,
+  uint32_t timeout,
+  uint32_t cache_capacity) {
+  // Unwrap the cache
+  std::shared_ptr<Cache> state_cache =
+    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_capacity)
+                          : make_cache(cache_capacity);
+
+  // Step 1. Get the environment
+  auto [header, body] = parse_header_and_body(lean_code);
+  std::shared_ptr<lean_object> env = state_cache->get(header);
+
+  // Step 2. Run the lean code, and parse the output
+  auto start = high_resolution_clock::now();
+  lean_object *lean_response = evaluate_one(lean_code, env.get(), timeout);
+  long duration =
+    duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
+  auto [response, header_env, final_state] = parse_lean_output(lean_response);
+
+  // Step 3. Run the cache update.
+  lean_inc(header_env);
+  state_cache->put(header, header_env);
+  py::dict cache_dict = state_cache->to_dict();
+  return py::make_tuple(response, duration, cache_dict);
+}
 
 py::tuple py_evaluate_many(
   const std::vector<std::string> &lean_code,
-  std::optional<py::capsule> capsule,
+  std::optional<py::dict> opt_cache,
   uint32_t timeout,
   uint32_t n_workers,
   uint32_t cache_capacity) {
 
   // Unwrap the cache
-  std::unique_ptr<Cache> state_cache = capsule.has_value()
-                                         ? unpack_cache(capsule.value())
-                                         : make_cache(cache_capacity);
+  std::shared_ptr<Cache> state_cache =
+    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_capacity)
+                          : make_cache(cache_capacity);
 
   // Output vectors
   std::vector<std::future<std::tuple<std::string, long>>> futures;
@@ -112,9 +139,9 @@ py::tuple py_evaluate_many(
     py::gil_scoped_release release;
 
     // launch the jobs
-    int i = 0;
-    for (const std::string &code : lean_code) {
-      auto fut = pool.enqueue([code, &state_cache, timeout, &i]() {
+    for (int i = 0; i < lean_code.size(); ++i) {
+      const std::string &code = lean_code[i];
+      auto fut = pool.enqueue([&code, state_cache, timeout, i]() {
         // Step 1. Get the environment
         auto [header, body] = parse_header_and_body(code);
         std::shared_ptr<lean_object> env = state_cache->get(header);
@@ -122,7 +149,7 @@ py::tuple py_evaluate_many(
         // Step 2. Run the lean code, and parse the output
         auto start = high_resolution_clock::now();
         lean_object *lean_response = evaluate_one(code, env.get(), timeout);
-        auto duration =
+        long duration =
           duration_cast<milliseconds>(high_resolution_clock::now() - start)
             .count();
         auto [json, header_env, final_state] = parse_lean_output(lean_response);
@@ -136,6 +163,7 @@ py::tuple py_evaluate_many(
     }
 
     std::unique_ptr<ProgressBar> pbar = make_progress_bar();
+    pbar->set_progress(0);
     show_console_cursor(false);
     std::stringstream ss;
     for (size_t i = 0; i < futures.size(); ++i) {
@@ -149,10 +177,12 @@ py::tuple py_evaluate_many(
       ss.str("");
       ss.clear();
     }
+    show_console_cursor(true);
   }
 
-  py::capsule return_capsule = pack_cache(state_cache.release());
-  return py::make_tuple(responses, durations, return_capsule);
+  // py::capsule return_capsule = pack_cache(state_cache.release());
+  py::dict dict = state_cache->to_dict();
+  return py::make_tuple(responses, durations, dict);
 }
 
 } // namespace pyle

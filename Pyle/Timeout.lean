@@ -3,31 +3,27 @@ import Lean
 
 open Task Lean.Elab
 
-def cancellableTimer (timeout : UInt32) : IO (Except IO.Error β) := do
-  let mut remaining := timeout
-  while remaining > 0 do
-    if (← IO.checkCanceled) then
-      return .error (IO.userError "timer cancelled - this is ok")
-    let step := min remaining 1000
-    IO.sleep step
-    remaining := remaining - step
+def timer (timeout : UInt32) : IO (Except IO.Error β) := do
+  IO.sleep timeout
   throw <| IO.userError s!"error: lean server timeout after {timeout} milliseconds"
 
 def runWithTimeout
   (func : Unit → IO β)
   (timeout : UInt32)
-  (prio : Task.Priority := .dedicated)
+  (prio : Task.Priority := .max)
   : IO (Except IO.Error β) := unsafe do
 
   -- spawn both tasks using Task.spawn
-  let timer := Task.spawn (fun _ => unsafeIO (cancellableTimer timeout)) .dedicated
-  let job := Task.spawn (fun _ => unsafeIO (do
+  let job <- IO.asTask (do
     let result ← func ()
-    pure (.ok result : Except IO.Error β)
-  )) prio
+    pure result
+  ) prio
+  let timer <- IO.asTask do
+    IO.sleep timeout
+    IO.cancel job
 
   -- wait for whichever finishes first
-  let result ← IO.waitAny [job, timer]
+  let result ← IO.wait job
 
   -- cancel both
   IO.cancel job
@@ -35,5 +31,5 @@ def runWithTimeout
 
   -- print result and return
   match result with
-  | .ok val => return val
+  | .ok val => return .ok val
   | .error err => return .error err
