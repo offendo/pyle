@@ -13,17 +13,20 @@ def runWithTimeout
   (prio : Task.Priority := .max)
   : IO (Except IO.Error β) := unsafe do
 
+  let start <- IO.monoMsNow
   -- spawn both tasks using Task.spawn
   let job <- IO.asTask (do
     let result ← func ()
-    pure result
+    return some result
   ) prio
+
   let timer <- IO.asTask do
     IO.sleep timeout
-    IO.cancel job
+    return none
 
   -- wait for whichever finishes first
-  let result ← IO.wait job
+  let result ← IO.waitAny [job, timer]
+  let stop <- IO.monoMsNow
 
   -- cancel both
   IO.cancel job
@@ -31,5 +34,9 @@ def runWithTimeout
 
   -- print result and return
   match result with
-  | .ok val => return .ok val
-  | .error err => return .error err
+  | .ok (some val) => do
+    return .ok val
+  | .ok (none) => do
+    return .error (IO.userError s!"timeout after {timeout}ms")
+  | .error err => do
+    return .error err

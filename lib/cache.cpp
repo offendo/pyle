@@ -1,14 +1,11 @@
 #include "pyle/cache.hpp"
-#include "pyle/capsule.hpp"
+#include "pyle/utils.hpp"
 #include <algorithm>
-#include <cstdio>
-#include <iostream>
 #include <lean/lean.h>
 #include <memory>
 #include <mutex>
 #include <string>
 
-namespace py = pybind11;
 namespace pyle {
 
 /* Makes a cache object and returns a unique pointer to it. */
@@ -96,26 +93,6 @@ void Cache::erase_all() {
   for (auto &it : cache) {
     erase(it.first);
   }
-}
-
-std::shared_ptr<Cache> from_dict(pybind11::dict dict, size_t capacity) {
-  std::shared_ptr<Cache> cache = make_cache(capacity);
-  for (auto &pair : dict) {
-    auto key = pair.first.cast<std::string>();
-    lean_object *env = static_cast<lean_object *>(
-      PyCapsule_GetPointer(pair.second.ptr(), "lean_object"));
-    cache->put(key, env);
-  }
-  return cache;
-}
-pybind11::dict Cache::to_dict() {
-  std::lock_guard<std::mutex> lock(mutex);
-  py::dict dict;
-  for (auto &[header, env] : cache) {
-    py::capsule capsule = pack_lean_object(env.get());
-    dict[py::cast(header)] = capsule;
-  }
-  return dict;
 }
 
 } // namespace pyle

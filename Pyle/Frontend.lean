@@ -15,6 +15,9 @@ def ppTactic (ctx : ContextInfo) (stx : Syntax) : IO Format :=
   catch _ =>
     pure "<failed to pretty print>"
 
+/- FIX/TODO: change tactics so it gets tactics per-theorem instead of
+ - concatenating them all together.
+ -/
 def tactics (trees : List InfoTree) : IO (List Pyle.Tactic) :=
   trees.flatMap InfoTree.tactics |>.mapM
     fun ⟨ctx, stx, rootGoals, goals, pos, endPos, ns⟩ => do

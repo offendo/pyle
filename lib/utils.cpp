@@ -1,8 +1,6 @@
-#include "pyle/utils.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
-#include <iostream>
 #include <lean/lean.h>
 #include <sstream>
 #include <vector>
@@ -29,27 +27,28 @@ void trim(std::string& s) {
 /**
  * Parses the given string into a header of import lines and the remaining body.
  */
-// TODO I think this function isn't working quite right. Need to test and make
-// sure the header/body is being split off properly.
+/* TODO I think this function isn't working quite right. Need to test and make
+ * sure the header/body is being split off properly. */
 std::pair<std::string, std::string>
 parse_header_and_body(const std::string &s) {
-  auto header = std::vector<std::string>{};
-  auto body = std::vector<std::string>{};
+  auto header_lines = std::vector<std::string>{};
+  auto body_lines = std::vector<std::string>{};
   auto ss = std::stringstream{s};
 
-  size_t head_length = 0;
+  size_t header_length = 0;
   for (std::string line; std::getline(ss, line, '\n');) {
     if (line.find("import") == 0) {
       // add 1 for the \n
-      head_length += line.length() + 1;
+      header_length += line.length() + 1;
     } else {
       // end of imports - we can split and return now
       break;
     }
   }
-  // get string views of the input data
-  std::string head(s.data(), head_length);
-  std::string bod(s.data() + head_length, s.size() - head_length);
+  // Substract 1 because we don't want the trailing newline.
+  header_length--;
+  std::string head = s.substr(0, header_length);
+  std::string bod = s.substr(header_length, s.size());
   trim(head);
   trim(bod);
   return std::make_pair(head, bod);
@@ -62,4 +61,10 @@ lean_obj_res lean_mk_array_of_strings(const std::vector<std::string> &vec) {
     lean_array_push(arr, str_i);
   }
   return arr;
+}
+
+void cleanup_lean_object(void *ptr) {
+  lean_object *obj = static_cast<lean_object *>(ptr);
+  if (obj)
+    lean_dec(obj);
 }

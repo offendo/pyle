@@ -1,26 +1,26 @@
 #pragma once
 
+#include "pyle/cache.hpp"
 #include <lean/lean.h>
-#include <optional>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
 #include <string>
 #include <vector>
 
-namespace py = pybind11;
-
 namespace pyle {
 
-py::tuple py_evaluate_one(
+/* Primary workhorse function */
+lean_obj_res evaluate_one(
   const std::string &lean_code,
-  std::optional<py::dict> dict,
-  uint32_t timeout,
-  uint32_t cache_capacity);
+  lean_obj_arg state,
+  uint32_t timeout);
 
-py::tuple py_evaluate_many(
+/* Utility function to parse output from lean tuple object to std::tuple */
+std::tuple<std::string, lean_object *, lean_object *>
+parse_lean_output(b_lean_obj_arg lean_response);
+
+/* Wrapper around evaluate_one which runs evaluate in parallel on threads*/
+std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
   const std::vector<std::string> &lean_code,
-  std::optional<py::dict> dict,
-  uint32_t timeout = 0,
-  uint32_t n_workers = 1,
-  uint32_t cache_capacity = 0);
+  Cache *state_cache,
+  uint32_t timeout,
+  uint32_t n_workers);
 } // namespace pyle

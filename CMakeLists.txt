@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(pyle LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined -g -O0 -fno-omit-frame-pointer")
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
-
+# set(CMAKE_CXX_FLAGS_DEBUG  "-g -pg -Wall")
+set(CMAKE_CXX_FLAGS  "-O3 -Wall")
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 1) find pybind11
@@ -57,16 +56,39 @@ foreach(libname IN ITEMS Init_shared leanshared_1 leanshared)
     set_target_properties(${libname} PROPERTIES IMPORTED_LOCATION "${${libname}_LIB}")
 endforeach()
 
+
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
-# 6) the Python extension
+# 6) Pyle Lib
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
-pybind11_add_module(pyle
-    lib/module.cpp
-    lib/capsule.cpp
-    lib/initialize.cpp
+add_library(pyle_lib STATIC
     lib/evaluate.cpp
     lib/cache.cpp
     lib/utils.cpp
+)
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+target_include_directories(pyle_lib PRIVATE
+    ${LEAN_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_link_libraries(pyle_lib PRIVATE
+    Pyle
+    Init_shared
+    leanshared_1
+    leanshared
+)
+set_target_properties(pyle_lib PROPERTIES
+    CXX_STANDARD 17
+    CMAKE_CXX_STANDARD_REQUIRED TRUE
+    BUILD_RPATH "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
+    INSTALL_RPATH "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
+)
+
+# –––––––––––––––––––––––
+# 6) the Python extension
+# –––––––––––––––––––––––
+pybind11_add_module(pyle
+    lib/module.cpp
 )
 
 target_include_directories(pyle PRIVATE
@@ -85,6 +107,41 @@ if (DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}"
     )
 endif()
+
+# ––––––––––––––––––––––––––––––––––––––––––––––––––
+# X) build the standalone binary
+# ––––––––––––––––––––––––––––––––––––––––––––––––––
+find_package(jsoncpp REQUIRED)
+add_executable(pyle_bin
+    bin/main.cpp
+)
+
+target_include_directories(pyle_bin PRIVATE
+    ${LEAN_INCLUDE_DIR}
+    ${Python3_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_link_libraries(pyle_bin PRIVATE
+    jsoncpp_lib
+    pyle_lib
+    Pyle
+    Init_shared
+    leanshared_1
+    leanshared
+)
+
+
+set_target_properties(pyle_bin PROPERTIES
+    CXX_STANDARD 17
+    CMAKE_CXX_STANDARD_REQUIRED TRUE
+    BUILD_WITH_INSTALL_RPATH ON
+    BUILD_RPATH "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR};${PYTHON_LIB_DIR}"
+    INSTALL_RPATH "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR};${PYTHON_LIB_DIR}"
+)
+
+# Optionally install it:
+install(TARGETS pyle_bin DESTINATION .)
+
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 7) RPATH so runtime can find the .so files

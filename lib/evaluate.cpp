@@ -3,17 +3,14 @@
 #include "indicators/setting.hpp"
 #include "lean/lean.h"
 #include "pyle/cache.hpp"
-#include "pyle/capsule.hpp"
 #include "pyle/lean.hpp"
 #include "pyle/tpool.hpp"
 #include "pyle/utils.hpp"
 #include <chrono>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <mutex>
-#include <optional>
-#include <pybind11/stl.h>
-#include <pyerrors.h>
 #include <sstream>
 #include <stdio.h>
 #include <string>
@@ -25,8 +22,6 @@ using result_t =
   std::tuple<std::string, std::string, std::string, std::string, long>;
 
 std::mutex cache_mutex;
-
-namespace py = pybind11;
 
 /* Creates a progress bar with some default settings. */
 std::unique_ptr<ProgressBar> make_progress_bar() {
@@ -86,103 +81,63 @@ parse_lean_output(b_lean_obj_arg lean_response) {
   std::string json_response = lean_string_cstr(response);
   return std::make_tuple(json_response, header_env, final_state);
 }
-py::tuple py_evaluate_one(
-  const std::string &lean_code,
-  std::optional<py::dict> opt_cache,
-  uint32_t timeout,
-  uint32_t cache_capacity) {
-  // Unwrap the cache
-  std::shared_ptr<Cache> state_cache =
-    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_capacity)
-                          : make_cache(cache_capacity);
 
-  // Step 1. Get the environment
-  auto [header, body] = parse_header_and_body(lean_code);
-  std::shared_ptr<lean_object> env = state_cache->get(header);
-
-  // Step 2. Run the lean code, and parse the output
-  auto start = high_resolution_clock::now();
-  lean_object *lean_response = evaluate_one(lean_code, env.get(), timeout);
-  long duration =
-    duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
-  auto [response, header_env, final_state] = parse_lean_output(lean_response);
-
-  // Step 3. Run the cache update.
-  lean_inc(header_env);
-  state_cache->put(header, header_env);
-  py::dict cache_dict = state_cache->to_dict();
-  return py::make_tuple(response, duration, cache_dict);
-}
-
-py::tuple py_evaluate_many(
+std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
   const std::vector<std::string> &lean_code,
-  std::optional<py::dict> opt_cache,
+  Cache *state_cache,
   uint32_t timeout,
-  uint32_t n_workers,
-  uint32_t cache_capacity) {
-
-  // Unwrap the cache
-  std::shared_ptr<Cache> state_cache =
-    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_capacity)
-                          : make_cache(cache_capacity);
+  uint32_t n_workers) {
 
   // Output vectors
   std::vector<std::future<std::tuple<std::string, long>>> futures;
   std::vector<std::string> responses(lean_code.size());
   std::vector<long> durations(lean_code.size());
 
-  // Scope to release python GIL
-  {
+  // launch the pool
+  ThreadPool pool(n_workers);
 
-    // launch the pool
-    ThreadPool pool(n_workers);
-    py::gil_scoped_release release;
+  // launch the jobs
+  for (int i = 0; i < lean_code.size(); ++i) {
+    const std::string &code = lean_code[i];
+    auto fut = pool.enqueue([&code, state_cache, timeout]() {
+      // Step 1. Get the environment
+      auto [header, body] = parse_header_and_body(code);
+      std::shared_ptr<lean_object> env = state_cache->get(header);
 
-    // launch the jobs
-    for (int i = 0; i < lean_code.size(); ++i) {
-      const std::string &code = lean_code[i];
-      auto fut = pool.enqueue([&code, state_cache, timeout, i]() {
-        // Step 1. Get the environment
-        auto [header, body] = parse_header_and_body(code);
-        std::shared_ptr<lean_object> env = state_cache->get(header);
+      // Step 2. Run the lean code, and parse the output
+      auto start = high_resolution_clock::now();
+      lean_object *lean_response = evaluate_one(code, env.get(), timeout);
+      long duration =
+        duration_cast<milliseconds>(high_resolution_clock::now() - start)
+          .count();
+      auto [json, header_env, final_state] = parse_lean_output(lean_response);
 
-        // Step 2. Run the lean code, and parse the output
-        auto start = high_resolution_clock::now();
-        lean_object *lean_response = evaluate_one(code, env.get(), timeout);
-        long duration =
-          duration_cast<milliseconds>(high_resolution_clock::now() - start)
-            .count();
-        auto [json, header_env, final_state] = parse_lean_output(lean_response);
-
-        // Step 3. Run the cache update.
-        lean_inc(header_env);
-        state_cache->put(header, header_env);
-        return std::make_tuple(json, duration);
-      });
-      futures.push_back(std::move(fut));
-    }
-
-    std::unique_ptr<ProgressBar> pbar = make_progress_bar();
-    pbar->set_progress(0);
-    show_console_cursor(false);
-    std::stringstream ss;
-    for (size_t i = 0; i < futures.size(); ++i) {
-      auto [response, duration] = futures[i].get();
-      responses[i] = response;
-      durations[i] = duration;
-      pbar->set_progress(100 * (i + 1) / responses.size());
-      // Format a postfix string
-      ss << "(" << i + 1 << "/" << responses.size() << ")";
-      pbar->set_option(option::PostfixText{ss.str()});
-      ss.str("");
-      ss.clear();
-    }
-    show_console_cursor(true);
+      // Step 3. Run the cache update.
+      lean_inc(header_env);
+      state_cache->put(header, header_env);
+      return std::make_tuple(json, duration);
+    });
+    futures.push_back(std::move(fut));
   }
 
-  // py::capsule return_capsule = pack_cache(state_cache.release());
-  py::dict dict = state_cache->to_dict();
-  return py::make_tuple(responses, durations, dict);
+  std::unique_ptr<ProgressBar> pbar = make_progress_bar();
+  pbar->set_progress(0);
+  show_console_cursor(false);
+  std::stringstream ss;
+  for (size_t i = 0; i < futures.size(); ++i) {
+    auto [response, duration] = futures[i].get();
+    responses[i] = response;
+    durations[i] = duration;
+    pbar->set_progress(100 * (i + 1) / responses.size());
+    // Format a postfix string
+    ss << "(" << i + 1 << "/" << responses.size() << ")";
+    pbar->set_option(option::PostfixText{ss.str()});
+    ss.str("");
+    ss.clear();
+  }
+  show_console_cursor(true);
+
+  return std::make_tuple(responses, durations, state_cache);
 }
 
 } // namespace pyle

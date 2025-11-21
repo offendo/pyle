@@ -1,10 +1,8 @@
 #pragma once
-#include "lean/lean.h"
 #include "pyle/lean.hpp"
 #include <condition_variable>
 #include <functional>
 #include <future>
-#include <iostream>
 #include <mutex>
 #include <queue>
 #include <stdexcept>
