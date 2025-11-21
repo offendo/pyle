@@ -38,10 +38,10 @@ int main(int argc, char *argv[]) {
   // Processing parameters
   std::string input_file = "examples.json";
   std::string output_file = "benchmark.json";
-  size_t sample_size = 1000;
+  size_t sample_size = 100;
   size_t cache_size = 5;
   std::vector<std::string> examples;
-  uint32_t timeout = 0;
+  uint32_t timeout = 30000;
   uint32_t n_workers = 10;
 
   // Loading input file

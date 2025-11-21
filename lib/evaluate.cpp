@@ -106,12 +106,13 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
       std::shared_ptr<lean_object> env = state_cache->get(header);
 
       // Step 2. Run the lean code, and parse the output
-      auto start = high_resolution_clock::now();
+      auto start = steady_clock::now();
       lean_object *lean_response = evaluate_one(code, env.get(), timeout);
       long duration =
-        duration_cast<milliseconds>(high_resolution_clock::now() - start)
+        duration_cast<milliseconds>(steady_clock::now() - start)
           .count();
       auto [json, header_env, final_state] = parse_lean_output(lean_response);
+      std::cout << "(" << std::this_thread::get_id() << ") evaluate_one: " << duration << std::endl;
 
       // Step 3. Run the cache update.
       lean_inc(header_env);
@@ -160,6 +161,7 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
     responses[i] = response;
     durations[i] = duration;
   }
+  pool.shutdown();
 
   return std::make_tuple(responses, durations, state_cache);
 }

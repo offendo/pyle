@@ -147,6 +147,7 @@ def evaluate_one
     return Command.mkState env messages opts)
 
   -- Run commands
+  let startTime <- IO.monoMsNow
   let (newState, messages, trees, err) <- (if timeout > 0 then
     do
       -- start a timer to cancel the job if needed
@@ -158,6 +159,8 @@ def evaluate_one
       let (state, msgs, trees) <- processCommandsWithInfoTrees inputCtx parserState cmdStateBefore 
       pure (some state, msgs, trees, "")
   )
+  let endTime <- IO.monoMsNow
+  IO.println s!"({<-IO.getTID}) processCommandsWithInfoTrees: {endTime - startTime}ms"
   -- Parse output
   let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
   let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
