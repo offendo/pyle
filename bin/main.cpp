@@ -36,22 +36,26 @@ int main(int argc, char *argv[]) {
   initialize();
 
   // Processing parameters
-  std::string file_name = "examples.json";
+  std::string input_file = "examples.json";
+  std::string output_file = "benchmark.json";
+  size_t sample_size = 10;
+  size_t cache_size = 5;
   std::vector<std::string> examples;
   uint32_t timeout = 20000;
   uint32_t n_workers = 4;
 
   // Loading input file
-  std::ifstream fin(file_name);
+  std::ifstream fin(input_file);
   if (!fin.is_open()) {
-    std::cerr << "Error: could not open " << file_name << std::endl;
+    std::cerr << "Error: could not open " << input_file << std::endl;
+    return 1;
   }
   Json::CharReaderBuilder rbuilder;
   rbuilder["collectComments"] = false;
   std::string errs;
   Json::Value root;
   Json::parseFromStream(rbuilder, fin, &root, &errs);
-  std::shared_ptr<pyle::Cache> cache = pyle::make_cache(5);
+  std::shared_ptr<pyle::Cache> cache = pyle::make_cache(cache_size);
 
   for (auto &it : root) {
     examples.push_back(it["full_proof"].asString());
@@ -66,11 +70,14 @@ int main(int argc, char *argv[]) {
   cache->put(header, header_env);
   long duration =
     duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
-  std::cout << "Imported header in " << ((float)duration) / 1000 << std::endl;
+  std::cout << "Imported header in " << ((float)duration) / 1000 << "s"
+            << std::endl;
 
   {
     // Take a sample to process
-    std::vector<std::string> sample(examples.begin(), examples.begin() + 10);
+    std::vector<std::string> sample(
+      examples.begin(),
+      examples.begin() + sample_size);
 
     // Process
     auto start = high_resolution_clock::now();
@@ -80,11 +87,11 @@ int main(int argc, char *argv[]) {
       duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
     std::cout << "Total time: " << total << std::endl;
 
-    // Write results to JSON file to read with python
+    // Write results to JSON file
     Json::Value outjson;
-    for (int i = 0; i < responses.size(); i++) {
+    for (int i = 0; i < (int)responses.size(); i++) {
       Json::Value val;
-      auto inp = root[i];
+      Json::Value inp = root[i];
       val["problem_id"] = inp["problem_id"];
       val["theorem"] = inp["full_proof"];
       val["response"] = responses[i];
@@ -93,9 +100,11 @@ int main(int argc, char *argv[]) {
     }
     Json::StyledWriter writer;
     std::string output = writer.write(outjson);
-    std::ofstream fout("benchmark.json");
-    if (!fout.is_open()){
-      std::cerr << "error: could not open benchmark.json" << std::endl;
+    std::ofstream fout(output_file);
+    if (!fout.is_open()) {
+      std::cerr << "error: could not open output file: " << output_file
+                << std::endl;
+      return 1;
     }
     fout << output << std::endl;
     fout.close();
@@ -103,4 +112,3 @@ int main(int argc, char *argv[]) {
   }
   return 0;
 }
-

@@ -26,14 +26,14 @@ std::mutex cache_mutex;
 /* Creates a progress bar with some default settings. */
 std::unique_ptr<ProgressBar> make_progress_bar() {
   return std::unique_ptr<ProgressBar>(new ProgressBar{
-    option::BarWidth{80},
+    option::BarWidth{100},
     option::Start{"["},
-    option::Fill{"■"},
-    option::Lead{"■"},
-    option::Remainder{"-"},
+    option::Fill{"="},
+    option::Lead{"="},
+    option::Remainder{" "},
     option::End{" ]"},
     option::PrefixText{"Verifying:"},
-    option::ForegroundColor{Color::cyan},
+    option::ForegroundColor{Color::white},
     option::ShowPercentage{true},
     option::ShowElapsedTime{true},
     option::ShowRemainingTime{true},
