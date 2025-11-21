@@ -38,11 +38,11 @@ int main(int argc, char *argv[]) {
   // Processing parameters
   std::string input_file = "examples.json";
   std::string output_file = "benchmark.json";
-  size_t sample_size = 10;
+  size_t sample_size = 1000;
   size_t cache_size = 5;
   std::vector<std::string> examples;
-  uint32_t timeout = 20000;
-  uint32_t n_workers = 4;
+  uint32_t timeout = 0;
+  uint32_t n_workers = 10;
 
   // Loading input file
   std::ifstream fin(input_file);
@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
   cache->put(header, header_env);
   long duration =
     duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
-  std::cout << "Imported header in " << ((float)duration) / 1000 << "s"
+  std::cout << "Imported header in " << duration / 1000 << "s"
             << std::endl;
 
   {

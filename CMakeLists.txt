@@ -60,24 +60,24 @@ endforeach()
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 6) Pyle Lib
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
-add_library(pyle_lib STATIC
+add_library(cpyle STATIC
     lib/evaluate.cpp
     lib/cache.cpp
     lib/utils.cpp
 )
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-target_include_directories(pyle_lib PRIVATE
+target_include_directories(cpyle PRIVATE
     ${LEAN_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/include
 )
 
-target_link_libraries(pyle_lib PRIVATE
+target_link_libraries(cpyle PRIVATE
     Pyle
     Init_shared
     leanshared_1
     leanshared
 )
-set_target_properties(pyle_lib PROPERTIES
+set_target_properties(cpyle PROPERTIES
     CXX_STANDARD 17
     CMAKE_CXX_STANDARD_REQUIRED TRUE
     BUILD_RPATH "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
@@ -123,7 +123,7 @@ target_include_directories(pyle_bin PRIVATE
 )
 target_link_libraries(pyle_bin PRIVATE
     jsoncpp_lib
-    pyle_lib
+    cpyle
     Pyle
     Init_shared
     leanshared_1

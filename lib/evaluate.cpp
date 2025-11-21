@@ -95,9 +95,10 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
 
   // launch the pool
   ThreadPool pool(n_workers);
+  std::cout << "Launched pool with " << n_workers << " workers" << std::endl;
 
   // launch the jobs
-  for (int i = 0; i < lean_code.size(); ++i) {
+  for (size_t i = 0; i < lean_code.size(); ++i) {
     const std::string &code = lean_code[i];
     auto fut = pool.enqueue([&code, state_cache, timeout]() {
       // Step 1. Get the environment
@@ -120,22 +121,45 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
     futures.push_back(std::move(fut));
   }
 
+  show_console_cursor(false);
   std::unique_ptr<ProgressBar> pbar = make_progress_bar();
   pbar->set_progress(0);
-  show_console_cursor(false);
+
   std::stringstream ss;
+  while (true) {
+      size_t done = 0;
+      // Count futures that have completed
+      for (auto &f : futures) {
+          if (f.valid() &&
+              f.wait_for(5ms) == std::future_status::ready) {
+              ++done;
+          }
+      }
+  
+      // Update progress bar
+      pbar->set_progress(100 * done / responses.size());
+      // Format a postfix string
+      ss << "(" << done + 1 << "/" << responses.size() << ")";
+      pbar->set_option(option::PostfixText{ss.str()});
+      ss.str("");
+      ss.clear();
+  
+      // Stop when all futures are done
+      if (done == futures.size()) {
+          break;
+      }
+  
+      // Avoid busy spinning
+      std::this_thread::sleep_for(50ms);
+  }
+  show_console_cursor(true);
+
+  // extract out the futures results
   for (size_t i = 0; i < futures.size(); ++i) {
     auto [response, duration] = futures[i].get();
     responses[i] = response;
     durations[i] = duration;
-    pbar->set_progress(100 * (i + 1) / responses.size());
-    // Format a postfix string
-    ss << "(" << i + 1 << "/" << responses.size() << ")";
-    pbar->set_option(option::PostfixText{ss.str()});
-    ss.str("");
-    ss.clear();
   }
-  show_console_cursor(true);
 
   return std::make_tuple(responses, durations, state_cache);
 }

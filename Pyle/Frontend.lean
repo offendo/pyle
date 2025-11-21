@@ -3,7 +3,6 @@ import Pyle.Timeout
 import Pyle.Lean.InfoTree
 import Pyle.Lean.InfoTree.ToJson
 import Pyle.JSON
-import Pyle.LruCache
 import Lean.Data.Json
 
 open Lean Elab
@@ -20,7 +19,7 @@ def ppTactic (ctx : ContextInfo) (stx : Syntax) : IO Format :=
  -/
 def tactics (trees : List InfoTree) : IO (List Pyle.Tactic) :=
   trees.flatMap InfoTree.tactics |>.mapM
-    fun ⟨ctx, stx, rootGoals, goals, pos, endPos, ns⟩ => do
+    fun ⟨ctx, stx, _, goals, pos, endPos, ns⟩ => do
       -- let proofState := some (← ProofSnapshot.create ctx none env? goals rootGoals)
       let goals := s!"{(← ctx.ppGoals goals)}".trim
       let tactic := Format.pretty (← ppTactic ctx stx)
@@ -29,62 +28,62 @@ def tactics (trees : List InfoTree) : IO (List Pyle.Tactic) :=
 end Pyle
 
 
-open Lean.Language.Lean in
-def Pyle.processCommands (inputCtx : Parser.InputContext) (parserState : Parser.ModuleParserState)
-    (commandState : Command.State)
-    (old? : Option (Parser.InputContext × CommandParsedSnapshot) := none)
-    (cancelTk? : Option IO.CancelToken):
-    IO (Task CommandParsedSnapshot) := do
-  let prom ← IO.Promise.new
-  -- custom set cancel token
-  let cancelTk ← (match cancelTk? with
-    | none => return <-IO.CancelToken.new
-    | some tk => do
-      return tk)
-  process.parseCmd (old?.map (·.2)) parserState commandState prom (sync := true) cancelTk
-    |>.run (old?.map (·.1))
-    |>.run { inputCtx with }
-  return prom.result!
-
-open Language in
-/--
-Variant of `IO.processCommands` that allows for potential incremental reuse. Pass in the result of a
-previous invocation done with the same state (but usually different input context) to allow for
-reuse.
--/
-partial def Pyle.IO.processCommandsIncrementally (inputCtx : Parser.InputContext)
-    (parserState : Parser.ModuleParserState) (commandState : Command.State)
-    (old? : Option IncrementalState) (cancelTk? : Option IO.CancelToken) :
-    IO IncrementalState := do
-  let task ← Pyle.processCommands inputCtx parserState commandState (old?.map fun old => (old.inputCtx, old.initialSnap)) cancelTk?
-  go task.get task #[]
-where
-  go initialSnap t commands := do
-    let snap := t.get
-    let commands := commands.push snap
-    match snap.nextCmdSnap? with
-    | some next => go initialSnap next.task commands
-    | none => do
-      -- Opting into reuse also enables incremental reporting, so make sure to collect messages from
-      -- all snapshots
-      let messages := toSnapshotTree initialSnap
-        |>.getAll.map (·.diagnostics.msgLog)
-        |>.foldl (· ++ ·) {}
-      -- In contrast to messages, we should collect info trees only from the top-level command
-      -- snapshots as they subsume any info trees reported incrementally by their children.
-      let trees := commands.map (·.finishedSnap.get.infoTree?) |>.filterMap id |>.toPArray'
-      return {
-        commandState := { snap.finishedSnap.get.cmdState with messages, infoState.trees := trees }
-        parserState := snap.parserState
-        cmdPos := snap.parserState.pos
-        commands := commands.map (·.stx)
-        inputCtx, initialSnap
-      }
-
-def Pyle.IO.processCommands (inputCtx : Parser.InputContext) (parserState : Parser.ModuleParserState)
-    (commandState : Command.State) (cancelTk? : Option IO.CancelToken) : IO Frontend.State := do
-  let st ← Pyle.IO.processCommandsIncrementally inputCtx parserState commandState none cancelTk?
-  return st.toState
+-- open Lean.Language.Lean in
+-- def Pyle.processCommands (inputCtx : Parser.InputContext) (parserState : Parser.ModuleParserState)
+--     (commandState : Command.State)
+--     (old? : Option (Parser.InputContext × CommandParsedSnapshot) := none)
+--     (cancelTk? : Option IO.CancelToken):
+--     IO (Task CommandParsedSnapshot) := do
+--   let prom ← IO.Promise.new
+--   -- custom set cancel token
+--   let cancelTk ← (match cancelTk? with
+--     | none => return <-IO.CancelToken.new
+--     | some tk => do
+--       return tk)
+--   process.parseCmd (old?.map (·.2)) parserState commandState prom (sync := true) cancelTk
+--     |>.run (old?.map (·.1))
+--     |>.run { inputCtx with }
+--   return prom.result!
+-- 
+-- open Language in
+-- /--
+-- Variant of `IO.processCommands` that allows for potential incremental reuse. Pass in the result of a
+-- previous invocation done with the same state (but usually different input context) to allow for
+-- reuse.
+-- -/
+-- partial def Pyle.IO.processCommandsIncrementally (inputCtx : Parser.InputContext)
+--     (parserState : Parser.ModuleParserState) (commandState : Command.State)
+--     (old? : Option IncrementalState) (cancelTk? : Option IO.CancelToken) :
+--     IO IncrementalState := do
+--   let task ← Pyle.processCommands inputCtx parserState commandState (old?.map fun old => (old.inputCtx, old.initialSnap)) cancelTk?
+--   go task.get task #[]
+-- where
+--   go initialSnap t commands := do
+--     let snap := t.get
+--     let commands := commands.push snap
+--     match snap.nextCmdSnap? with
+--     | some next => go initialSnap next.task commands
+--     | none => do
+--       -- Opting into reuse also enables incremental reporting, so make sure to collect messages from
+--       -- all snapshots
+--       let messages := toSnapshotTree initialSnap
+--         |>.getAll.map (·.diagnostics.msgLog)
+--         |>.foldl (· ++ ·) {}
+--       -- In contrast to messages, we should collect info trees only from the top-level command
+--       -- snapshots as they subsume any info trees reported incrementally by their children.
+--       let trees := commands.map (·.finishedSnap.get.infoTree?) |>.filterMap id |>.toPArray'
+--       return {
+--         commandState := { snap.finishedSnap.get.cmdState with messages, infoState.trees := trees }
+--         parserState := snap.parserState
+--         cmdPos := snap.parserState.pos
+--         commands := commands.map (·.stx)
+--         inputCtx, initialSnap
+--       }
+-- 
+-- def Pyle.IO.processCommands (inputCtx : Parser.InputContext) (parserState : Parser.ModuleParserState)
+--     (commandState : Command.State) (cancelTk? : Option IO.CancelToken) : IO Frontend.State := do
+--   let st ← Pyle.IO.processCommandsIncrementally inputCtx parserState commandState none cancelTk?
+--   return st.toState
 
 namespace Lean.Elab.IO
 open Pyle Frontend
@@ -95,9 +94,9 @@ Wrapper for `IO.processCommands` that enables info states, and returns
 -/
 def processCommandsWithInfoTrees
     (inputCtx : Parser.InputContext) (parserState : Parser.ModuleParserState)
-    (commandState : Command.State) (cancelTk? : Option IO.CancelToken) : IO (Command.State × List Message × List InfoTree) := do
-  let commandState := { commandState with infoState.enabled := true }
-  let s ← Pyle.IO.processCommands inputCtx parserState commandState cancelTk? <&> Frontend.State.commandState
+    (commandState : Command.State)  : IO (Command.State × List Message × List InfoTree) := do
+  -- let commandState := { commandState with infoState.enabled := true }
+  let s ← IO.processCommands inputCtx parserState commandState <&> Frontend.State.commandState
   pure (s, s.messages.toList, s.infoState.trees.toList)
 
 end Lean.Elab.IO
@@ -151,12 +150,12 @@ def evaluate_one
   let (newState, messages, trees, err) <- (if timeout > 0 then
     do
       -- start a timer to cancel the job if needed
-      let result <- runWithTimeout (fun () => processCommandsWithInfoTrees inputCtx parserState cmdStateBefore none) timeout
+      let result <- runWithTimeout (fun () => processCommandsWithInfoTrees inputCtx parserState cmdStateBefore) timeout
       (match result with
         | .error err => return (none, [], [], err.toString)
         | .ok (state, msgs, trees) => return (some state, msgs, trees, ""))
     else do
-      let (state, msgs, trees) <- processCommandsWithInfoTrees inputCtx parserState cmdStateBefore none
+      let (state, msgs, trees) <- processCommandsWithInfoTrees inputCtx parserState cmdStateBefore 
       pure (some state, msgs, trees, "")
   )
   -- Parse output
