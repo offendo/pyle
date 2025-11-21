@@ -68,20 +68,39 @@ int main(int argc, char *argv[]) {
     duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
   std::cout << "Imported header in " << ((float)duration) / 1000 << std::endl;
 
-  // Run the multithreading
   {
-    std::vector<std::string> sample(examples.begin(), examples.begin() + 100);
+    // Take a sample to process
+    std::vector<std::string> sample(examples.begin(), examples.begin() + 10);
 
+    // Process
     auto start = high_resolution_clock::now();
     auto [responses, durations, new_cache] =
       pyle::evaluate_many(sample, cache.get(), timeout, n_workers);
     long total =
       duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
-    for (const auto &d : durations) {
-      std::cout << d << ", ";
-    }
-    std::cout << std::endl;
     std::cout << "Total time: " << total << std::endl;
+
+    // Write results to JSON file to read with python
+    Json::Value outjson;
+    for (int i = 0; i < responses.size(); i++) {
+      Json::Value val;
+      auto inp = root[i];
+      val["problem_id"] = inp["problem_id"];
+      val["theorem"] = inp["full_proof"];
+      val["response"] = responses[i];
+      val["duration"] = Json::Int(durations[i]);
+      outjson.append(val);
+    }
+    Json::StyledWriter writer;
+    std::string output = writer.write(outjson);
+    std::ofstream fout("benchmark.json");
+    if (!fout.is_open()){
+      std::cerr << "error: could not open benchmark.json" << std::endl;
+    }
+    fout << output << std::endl;
+    fout.close();
+    fout.clear();
   }
   return 0;
 }
+
