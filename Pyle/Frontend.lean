@@ -44,7 +44,7 @@ end Pyle
 --     |>.run (old?.map (·.1))
 --     |>.run { inputCtx with }
 --   return prom.result!
--- 
+--
 -- open Language in
 -- /--
 -- Variant of `IO.processCommands` that allows for potential incremental reuse. Pass in the result of a
@@ -79,7 +79,7 @@ end Pyle
 --         commands := commands.map (·.stx)
 --         inputCtx, initialSnap
 --       }
--- 
+--
 -- def Pyle.IO.processCommands (inputCtx : Parser.InputContext) (parserState : Parser.ModuleParserState)
 --     (commandState : Command.State) (cancelTk? : Option IO.CancelToken) : IO Frontend.State := do
 --   let st ← Pyle.IO.processCommandsIncrementally inputCtx parserState commandState none cancelTk?
@@ -147,7 +147,7 @@ def evaluate_one
     return Command.mkState env messages opts)
 
   -- Run commands
-  let startTime <- IO.monoMsNow
+  -- let startTime <- IO.monoMsNow
   let (newState, messages, trees, err) <- (if timeout > 0 then
     do
       -- start a timer to cancel the job if needed
@@ -156,11 +156,11 @@ def evaluate_one
         | .error err => return (none, [], [], err.toString)
         | .ok (state, msgs, trees) => return (some state, msgs, trees, ""))
     else do
-      let (state, msgs, trees) <- processCommandsWithInfoTrees inputCtx parserState cmdStateBefore 
+      let (state, msgs, trees) <- processCommandsWithInfoTrees inputCtx parserState cmdStateBefore
       pure (some state, msgs, trees, "")
   )
-  let endTime <- IO.monoMsNow
-  IO.println s!"({<-IO.getTID}) processCommandsWithInfoTrees: {endTime - startTime}ms"
+  -- let endTime <- IO.monoMsNow
+  -- IO.println s!"({<-IO.getTID}) processCommandsWithInfoTrees: {endTime - startTime}ms"
   -- Parse output
   let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
   let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)

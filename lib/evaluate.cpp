@@ -95,7 +95,7 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
 
   // launch the pool
   ThreadPool pool(n_workers);
-  std::cout << "Launched pool with " << n_workers << " workers" << std::endl;
+  // std::cout << "Launched pool with " << n_workers << " workers" << std::endl;
 
   // launch the jobs
   for (size_t i = 0; i < lean_code.size(); ++i) {
@@ -109,10 +109,10 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
       auto start = steady_clock::now();
       lean_object *lean_response = evaluate_one(code, env.get(), timeout);
       long duration =
-        duration_cast<milliseconds>(steady_clock::now() - start)
-          .count();
+        duration_cast<milliseconds>(steady_clock::now() - start).count();
       auto [json, header_env, final_state] = parse_lean_output(lean_response);
-      std::cout << "(" << std::this_thread::get_id() << ") evaluate_one: " << duration << std::endl;
+      // std::cout << "(" << std::this_thread::get_id() << ") evaluate_one: " <<
+      // duration << std::endl;
 
       // Step 3. Run the cache update.
       lean_inc(header_env);
@@ -128,30 +128,29 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
 
   std::stringstream ss;
   while (true) {
-      size_t done = 0;
-      // Count futures that have completed
-      for (auto &f : futures) {
-          if (f.valid() &&
-              f.wait_for(5ms) == std::future_status::ready) {
-              ++done;
-          }
+    size_t done = 0;
+    // Count futures that have completed
+    for (auto &f : futures) {
+      if (f.valid() && f.wait_for(5ms) == std::future_status::ready) {
+        ++done;
       }
-  
-      // Update progress bar
-      pbar->set_progress(100 * done / responses.size());
-      // Format a postfix string
-      ss << "(" << done + 1 << "/" << responses.size() << ")";
-      pbar->set_option(option::PostfixText{ss.str()});
-      ss.str("");
-      ss.clear();
-  
-      // Stop when all futures are done
-      if (done == futures.size()) {
-          break;
-      }
-  
-      // Avoid busy spinning
-      std::this_thread::sleep_for(50ms);
+    }
+
+    // Update progress bar
+    pbar->set_progress(100 * done / responses.size());
+    // Format a postfix string
+    ss << "(" << done + 1 << "/" << responses.size() << ")";
+    pbar->set_option(option::PostfixText{ss.str()});
+    ss.str("");
+    ss.clear();
+
+    // Stop when all futures are done
+    if (done == futures.size()) {
+      break;
+    }
+
+    // Avoid busy spinning
+    std::this_thread::sleep_for(50ms);
   }
   show_console_cursor(true);
 
