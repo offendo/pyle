@@ -52,7 +52,7 @@ parse_header_and_body(const std::string &s) {
   // Substract 1 because we don't want the trailing newline.
   header_length--;
   std::string head = s.substr(0, header_length);
-  std::string bod = s.substr(header_length, s.size());
+  std::string bod = s.substr(header_length, s.size() - header_length);
   trim(head);
   trim(bod);
   return std::make_pair(head, bod);
