@@ -8,22 +8,23 @@
 
 namespace py = pybind11;
 
-using namespace pyle;
 using namespace std::chrono;
 
-pybind11::capsule pyle::pack_lean_object(lean_object *obj) {
+namespace pyle {
+
+pybind11::capsule pack_lean_object(lean_object *obj) {
   return pybind11::capsule(obj, "lean_object", [](PyObject *capsule) {
     cleanup_lean_object(PyCapsule_GetPointer(capsule, "lean_object"));
   });
 }
 
-lean_object *pyle::unpack_lean_object(const pybind11::capsule &capsule) {
+lean_object *unpack_lean_object(const pybind11::capsule &capsule) {
   lean_object *obj = static_cast<lean_object *>(
     PyCapsule_GetPointer(capsule.ptr(), "lean_object"));
   return obj;
 }
 
-std::shared_ptr<Cache> pyle::from_dict(pybind11::dict dict, size_t capacity) {
+std::shared_ptr<Cache> from_dict(pybind11::dict dict, size_t capacity) {
   std::shared_ptr<Cache> cache = make_cache(capacity);
   for (auto &pair : dict) {
     auto key = pair.first.cast<std::string>();
@@ -34,11 +35,11 @@ std::shared_ptr<Cache> pyle::from_dict(pybind11::dict dict, size_t capacity) {
   return cache;
 }
 
-pybind11::dict pyle::to_dict(Cache *cache) {
+pybind11::dict to_dict(Cache *cache) {
   std::lock_guard<std::mutex> lock(cache->mutex);
   py::dict dict;
   for (auto &[header, env] : cache->cache) {
-    py::capsule capsule = pyle::pack_lean_object(env.get());
+    py::capsule capsule = pack_lean_object(env.get());
     dict[py::cast(header)] = capsule;
   }
   return dict;
@@ -51,7 +52,7 @@ py::tuple py_evaluate_one(
   uint32_t cache_capacity) {
   // Unwrap the cache
   std::shared_ptr<Cache> state_cache =
-    opt_cache.has_value() ? pyle::from_dict(opt_cache.value(), cache_capacity)
+    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_capacity)
                           : make_cache(cache_capacity);
 
   // Step 1. Get the environment
@@ -68,7 +69,7 @@ py::tuple py_evaluate_one(
   // Step 3. Run the cache update.
   lean_inc(header_env);
   state_cache->put(header, header_env);
-  py::dict cache_dict = pyle::to_dict(state_cache.get());
+  py::dict cache_dict = to_dict(state_cache.get());
   return py::make_tuple(response, duration, cache_dict);
 }
 
@@ -81,13 +82,13 @@ py::tuple py_evaluate_many(
 
   // Unwrap the cache
   std::shared_ptr<Cache> state_cache =
-    opt_cache.has_value() ? pyle::from_dict(opt_cache.value(), cache_capacity)
+    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_capacity)
                           : make_cache(cache_capacity);
 
   auto [responses, durations, new_cache_ptr] =
     evaluate_many(lean_code, state_cache.get(), timeout, n_workers);
 
-  py::dict dict = pyle::to_dict(state_cache.get());
+  py::dict dict = to_dict(state_cache.get());
   return py::make_tuple(responses, durations, dict);
 }
 
@@ -109,6 +110,8 @@ void initialize() {
   lean_io_mark_end_initialization();
   run_search_path_init();
 }
+
+} // namespace pyle
 
 PYBIND11_MODULE(pyle, m) {
   pyle::initialize();
