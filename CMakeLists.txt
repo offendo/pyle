@@ -2,7 +2,8 @@ cmake_minimum_required(VERSION 3.15)
 project(pyle LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # set(CMAKE_CXX_FLAGS_DEBUG  "-g -pg -Wall")
-set(CMAKE_CXX_FLAGS  "-O3 -Wall")
+# set(CMAKE_CXX_FLAGS  "-O3 -Wall")
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 1) find pybind11
@@ -97,6 +98,7 @@ target_include_directories(pyle PRIVATE
 )
 
 target_link_libraries(pyle PRIVATE
+    cpyle
     Pyle
     Init_shared
     leanshared_1
