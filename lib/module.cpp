@@ -4,8 +4,8 @@
 #include "pyle/lean.hpp"
 #include "pyle/utils.hpp"
 #include <iostream>
-#include <pybind11/stl.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 namespace py = pybind11;
 
@@ -25,8 +25,8 @@ lean_object *unpack_lean_object(const pybind11::capsule &capsule) {
   return obj;
 }
 
-std::shared_ptr<Cache> from_dict(pybind11::dict dict, size_t capacity) {
-  std::shared_ptr<Cache> cache = make_cache(capacity);
+std::shared_ptr<Cache> from_dict(pybind11::dict dict, size_t size) {
+  std::shared_ptr<Cache> cache = make_cache(size);
   for (auto &pair : dict) {
     auto key = pair.first.cast<std::string>();
     lean_object *env = static_cast<lean_object *>(
@@ -50,11 +50,11 @@ py::tuple py_evaluate_one(
   const std::string &lean_code,
   std::optional<py::dict> opt_cache,
   uint32_t timeout,
-  uint32_t cache_capacity) {
+  uint32_t cache_size) {
   // Unwrap the cache
   std::shared_ptr<Cache> state_cache =
-    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_capacity)
-                          : make_cache(cache_capacity);
+    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_size)
+                          : make_cache(cache_size);
 
   // Step 1. Get the environment
   auto [header, body] = parse_header_and_body(lean_code);
@@ -79,18 +79,23 @@ py::tuple py_evaluate_many(
   std::optional<py::dict> opt_cache,
   uint32_t timeout,
   uint32_t n_workers,
-  uint32_t cache_capacity) {
+  uint32_t cache_size) {
 
   // Unwrap the cache
   std::shared_ptr<Cache> state_cache =
-    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_capacity)
-                          : make_cache(cache_capacity);
+    opt_cache.has_value() ? from_dict(opt_cache.value(), cache_size)
+                          : make_cache(cache_size);
 
   auto [responses, durations, new_cache_ptr] =
     evaluate_many(lean_code, state_cache.get(), timeout, n_workers);
 
   py::dict dict = to_dict(state_cache.get());
   return py::make_tuple(responses, durations, dict);
+}
+
+py::tuple py_parse_header_and_body(const std::string &s) {
+  auto [header, body] = parse_header_and_body(s);
+  return py::make_tuple(header, body);
 }
 
 void initialize() {
@@ -136,4 +141,10 @@ PYBIND11_MODULE(pyle, m) {
     py::arg("timeout") = 0,
     py::arg("n_workers") = 1,
     py::arg("cache_size") = 5);
+
+  m.def(
+    "parse_header_and_body",
+    &pyle::py_parse_header_and_body,
+    "Parse out header and body.",
+    py::arg("lean_code"));
 }

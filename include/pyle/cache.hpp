@@ -11,11 +11,11 @@ namespace pyle {
 class Cache {
 public:
   std::mutex mutex;
-  uint32_t capacity;
+  uint32_t size;
   std::list<std::string> lru;
   std::unordered_map<std::string, std::shared_ptr<lean_object>> cache;
 
-  Cache(uint32_t capacity) : capacity(capacity) {};
+  Cache(uint32_t size) : size(size) {};
   std::shared_ptr<lean_object> get(const std::string header);
   std::shared_ptr<lean_object>
   put(const std::string header, lean_object *state);
@@ -23,5 +23,5 @@ public:
   void erase_all();
 };
 
-std::shared_ptr<Cache> make_cache(uint32_t capacity);
+std::shared_ptr<Cache> make_cache(uint32_t size);
 } // namespace pyle

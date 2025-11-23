@@ -9,8 +9,8 @@
 namespace pyle {
 
 /* Makes a cache object and returns a unique pointer to it. */
-std::shared_ptr<Cache> make_cache(uint32_t capacity) {
-  return std::make_shared<Cache>(capacity);
+std::shared_ptr<Cache> make_cache(uint32_t size) {
+  return std::make_shared<Cache>(size);
 };
 
 /* Get state associated with header. */
@@ -50,9 +50,9 @@ Cache::put(const std::string header, lean_object *state) {
     lru.push_back(header);
     return cache[header];
   } else {
-    // Otherwise, we have to add it to the cache. If it's at capacity, gotta pop
+    // Otherwise, we have to add it to the cache. If it's at size, gotta pop
     // the LRU element.
-    if (cache.size() == capacity) {
+    if (cache.size() == size) {
       std::string lru_header = lru.front();
       cache.erase(lru_header);
       lru.pop_front();
