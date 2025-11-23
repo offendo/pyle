@@ -1,15 +1,12 @@
-#include <chrono>
-#include <utility>
-#include <iostream>
-
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <lean/lean.h>
-#include <sstream>
+#include <string>
+#include <utility>
 #include <vector>
 
-void trim_right(std::string& s) {
+void trim_right(std::string &s) {
   s.erase(
     std::find_if(
       s.rbegin(),
@@ -18,12 +15,12 @@ void trim_right(std::string& s) {
       .base(),
     s.end());
 }
-void trim_left(std::string& s) {
+void trim_left(std::string &s) {
   s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
             return !std::isspace(ch);
           }));
 }
-void trim(std::string& s) {
+void trim(std::string &s) {
   trim_left(s);
   trim_right(s);
 }
@@ -37,25 +34,19 @@ std::pair<std::string, std::string>
 parse_header_and_body(const std::string &s) {
   auto header_lines = std::vector<std::string>{};
   auto body_lines = std::vector<std::string>{};
-  auto ss = std::stringstream{s};
 
-  size_t header_length = 0;
-  for (std::string line; std::getline(ss, line, '\n');) {
-    if (line.find("import") == 0) {
-      // add 1 for the \n
-      header_length += line.length() + 1;
-    } else {
-      // end of imports - we can split and return now
-      break;
-    }
+  // First, check to see if there are any imports.
+  // If not, the whole thing is the body so the header can be empty.
+  size_t header_start = s.find("import");
+  if (header_start == std::string::npos) {
+    return std::make_pair("", s);
   }
-  // Substract 1 because we don't want the trailing newline.
-  header_length--;
-  std::string head = s.substr(0, header_length);
-  std::string bod = s.substr(header_length, s.size() - header_length);
-  trim(head);
-  trim(bod);
-  return std::make_pair(head, bod);
+  // start index of the last line
+  size_t header_last_line = s.rfind("import");
+  size_t header_end = s.find("\n", header_last_line);
+  const std::string &header = s.substr(header_start, header_end - header_start);
+  const std::string &body = s.substr(header_end, s.size() - header_end);
+  return std::make_pair(header, body);
 }
 
 lean_obj_res lean_mk_array_of_strings(const std::vector<std::string> &vec) {
