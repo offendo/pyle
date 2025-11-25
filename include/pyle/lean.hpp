@@ -16,10 +16,9 @@ extern "C" void lean_finalize_thread();
 extern "C" lean_object *run_search_path_init();
 extern "C" lean_object *
 initialize_Pyle_Frontend(uint8_t builtin, lean_object *);
-extern "C" lean_object *lean_evaluate(lean_obj_arg, lean_obj_arg, uint32_t);
+extern "C" lean_object *
+lean_evaluate(lean_obj_arg, lean_obj_arg, uint32_t, bool);
 extern "C" lean_object *lean_cache_mk(uint32_t);
 extern "C" lean_object *lean_cache_get(lean_obj_arg, lean_obj_arg);
 extern "C" void lean_cache_print(lean_obj_arg);
 extern "C" void lean_cache_put(lean_obj_arg, lean_obj_arg, lean_obj_arg);
-// extern "C" lean_object * lean_evaluate_batch(lean_obj_arg, lean_obj_arg,
-// uint32_t);

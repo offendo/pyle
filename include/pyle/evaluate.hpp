@@ -11,7 +11,8 @@ namespace pyle {
 lean_obj_res evaluate_one(
   const std::string &lean_code,
   lean_obj_arg state,
-  uint32_t timeout);
+  uint32_t timeout,
+  bool return_info_trees = true);
 
 /* Utility function to parse output from lean tuple object to std::tuple */
 std::tuple<std::string, lean_object *, lean_object *>
@@ -22,5 +23,6 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
   const std::vector<std::string> &lean_code,
   Cache *state_cache,
   uint32_t timeout,
-  uint32_t n_workers);
+  uint32_t n_workers,
+  bool return_info_trees = true);
 } // namespace pyle

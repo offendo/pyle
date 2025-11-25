@@ -131,6 +131,7 @@ def evaluate_one
   (input : String)
   (env? : Option Environment)
   (timeout : UInt32 := 0)
+  (returnInfoTree : Bool := True)
   : IO $ String × Environment × Option Command.State  := do
   let fileName   := "<input>"
   let inputCtx   := Parser.mkInputContext input fileName
@@ -139,7 +140,7 @@ def evaluate_one
   let (cmdStateBefore, parserState) := (<-match env? with
   -- If we find it, go ahead and use it.
   | some env => do
-    let emptyState := Parser.ModuleParserState.mk 0 false
+    let emptyState : Parser.ModuleParserState := {}
     return (Command.mkState env (opts := opts), emptyState)
   | none => do
     let (header, parserState, messages) ← Parser.parseHeader inputCtx
@@ -148,11 +149,10 @@ def evaluate_one
     return (Command.mkState env messages opts, parserState))
 
   -- Run commands
-  -- let startTime <- IO.monoMsNow
   let (newState, messages, trees, err) <- (if timeout > 0 then
     do
       -- start a timer to cancel the job if needed
-      let result <- runWithTimeout (fun () => processCommandsWithInfoTrees inputCtx parserState cmdStateBefore) timeout .max
+      let result <- runWithTimeout (fun () => processCommandsWithInfoTrees inputCtx parserState cmdStateBefore) timeout .dedicated
       (match result with
         | .error err => return (none, [], [], err.toString)
         | .ok (state, msgs, trees) => return (some state, msgs, trees, ""))
@@ -161,7 +161,11 @@ def evaluate_one
       pure (some state, msgs, trees, "")
   )
   -- Parse output
-  let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
+  let tree <- (if returnInfoTree
+    then do
+    return Json.arr (← trees.toArray.mapM fun t => t.toJson none)
+    else
+    return Json.null)
   let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
   let tacs := Json.arr ((<- Pyle.tactics trees).toArray.map fun m => toJson m)
   let errs := Json.str err

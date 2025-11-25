@@ -50,7 +50,8 @@ py::tuple py_evaluate_one(
   const std::string &lean_code,
   std::optional<py::dict> opt_cache,
   uint32_t timeout,
-  uint32_t cache_size) {
+  uint32_t cache_size,
+  bool return_info_tree) {
   // Unwrap the cache
   std::shared_ptr<Cache> state_cache =
     opt_cache.has_value() ? from_dict(opt_cache.value(), cache_size)
@@ -64,12 +65,8 @@ py::tuple py_evaluate_one(
   auto start = high_resolution_clock::now();
   // If we found the env, DON'T PASS IN THE HEADER
   // TODO make "with header" and "without header" computation separate functions
-  lean_object *lean_response;
-  if (env) {
-    lean_response = evaluate_one(body, env.get(), timeout);
-  } else {
-    lean_response = evaluate_one(lean_code, env.get(), timeout);
-  }
+  lean_object *lean_response =
+    evaluate_one(env ? body : lean_code, env.get(), timeout);
   long duration =
     duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
   auto [response, header_env, final_state] = parse_lean_output(lean_response);
@@ -86,7 +83,8 @@ py::tuple py_evaluate_many(
   std::optional<py::dict> opt_cache,
   uint32_t timeout,
   uint32_t n_workers,
-  uint32_t cache_size) {
+  uint32_t cache_size,
+  bool return_info_tree) {
 
   // Unwrap the cache
   std::shared_ptr<Cache> state_cache =
@@ -145,7 +143,8 @@ PYBIND11_MODULE(pyle, m) {
     py::arg("lean_code"),
     py::arg("state_cache") = py::none(),
     py::arg("timeout") = 0,
-    py::arg("cache_size") = 5);
+    py::arg("cache_size") = 5,
+    py::arg("return_info_tree") = false);
 
   m.def(
     "evaluate_many",
@@ -155,7 +154,8 @@ PYBIND11_MODULE(pyle, m) {
     py::arg("state_cache") = py::none(),
     py::arg("timeout") = 0,
     py::arg("n_workers") = 1,
-    py::arg("cache_size") = 5);
+    py::arg("cache_size") = 5,
+    py::arg("return_info_tree") = false);
 
   m.def(
     "parse_header_and_body",

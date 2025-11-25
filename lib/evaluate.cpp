@@ -45,7 +45,8 @@ namespace pyle {
 lean_obj_res evaluate_one(
   const std::string &lean_code,
   lean_obj_arg state,
-  uint32_t timeout) {
+  uint32_t timeout,
+  bool return_info_trees) {
 
   // Box the cstring into a lean_object. This object will be consumed by the
   // function
@@ -65,7 +66,7 @@ lean_obj_res evaluate_one(
   // Return the lean output. Note that `lean_evaluate` here is not
   // pyle::evaluate()
   // - i.e., this is not a recursive call.
-  auto out = lean_evaluate(boxed, opt_state, timeout);
+  auto out = lean_evaluate(boxed, opt_state, timeout, return_info_trees);
   return out;
 }
 
@@ -86,7 +87,8 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
   const std::vector<std::string> &lean_code,
   Cache *state_cache,
   uint32_t timeout,
-  uint32_t n_workers) {
+  uint32_t n_workers,
+  bool return_info_trees) {
 
   // Output vectors
   std::vector<std::future<std::tuple<std::string, long>>> futures;
@@ -100,7 +102,7 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
   // launch the jobs
   for (size_t i = 0; i < lean_code.size(); ++i) {
     const std::string &code = lean_code[i];
-    auto fut = pool.enqueue([&code, state_cache, timeout]() {
+    auto fut = pool.enqueue([&]() {
       // Step 1. Get the environment
       auto [header, body] = parse_header_and_body(code);
       std::shared_ptr<lean_object> env = state_cache->get(header);
@@ -109,18 +111,15 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
       auto start = steady_clock::now();
       // If we found the env, DON'T PASS IN THE HEADER
       // TODO make "with header" and "without header" separate functions
-      lean_object *lean_response;
-      if (env) {
-        lean_response = evaluate_one(body, env.get(), timeout);
-      } else {
-        lean_response = evaluate_one(code, env.get(), timeout);
-      }
+      lean_object *lean_response =
+        evaluate_one(env ? body : code, env.get(), timeout, return_info_trees);
       long duration =
         duration_cast<milliseconds>(steady_clock::now() - start).count();
       auto [json, header_env, final_state] = parse_lean_output(lean_response);
-      // std::cout << "(" << std::this_thread::get_id() << ") evaluate_one: " <<
-      // duration << std::endl;
-
+      /*
+      std::cout << "(" << std::this_thread::get_id() << ") total: " << duration
+                << std::endl;
+                */
       // Step 3. Run the cache update.
       lean_inc(header_env);
       state_cache->put(header, header_env);
@@ -129,44 +128,16 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
     futures.push_back(std::move(fut));
   }
 
-  show_console_cursor(false);
-  std::unique_ptr<ProgressBar> pbar = make_progress_bar();
-  pbar->set_progress(0);
-
-  std::stringstream ss;
-  while (true) {
-    size_t done = 0;
-    // Count futures that have completed
-    for (auto &f : futures) {
-      if (f.valid() && f.wait_for(0s) == std::future_status::ready) {
-        ++done;
-      }
-    }
-
-    // Update progress bar
-    pbar->set_progress(100 * done / responses.size());
-    // Format a postfix string
-    ss << "(" << done + 1 << "/" << responses.size() << ")";
-    pbar->set_option(option::PostfixText{ss.str()});
-    ss.str("");
-    ss.clear();
-
-    // Stop when all futures are done
-    if (done == futures.size()) {
-      break;
-    }
-
-    // Avoid busy spinning
-    std::this_thread::sleep_for(100ms);
-  }
-  show_console_cursor(true);
-
   // extract out the futures results
+  std::unique_ptr<ProgressBar> pbar = make_progress_bar();
   for (size_t i = 0; i < futures.size(); ++i) {
+    pbar->set_progress(100 * i / responses.size());
+    futures[i].wait();
     auto [response, duration] = futures[i].get();
     responses[i] = response;
     durations[i] = duration;
   }
+  pbar->mark_as_completed();
   pool.shutdown();
 
   return std::make_tuple(responses, durations, state_cache);

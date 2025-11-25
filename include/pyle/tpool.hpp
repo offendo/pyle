@@ -13,8 +13,9 @@
 class ThreadPool {
 public:
   explicit ThreadPool(size_t thread_count) : stop(false) {
+    busy.resize(thread_count);
     for (size_t i = 0; i < thread_count; ++i) {
-      workers.emplace_back([this]() {
+      workers.emplace_back([this, i]() {
         lean_initialize_thread();
         // Worker loop which runs forever
         while (true) {
@@ -22,6 +23,7 @@ public:
 
           { // wait for a task or shutdown
             std::unique_lock<std::mutex> lock(mutex);
+            busy[i] = false;
             cv.wait(lock, [this]() { return stop || !tasks.empty(); });
 
             if (stop && tasks.empty())
@@ -29,13 +31,21 @@ public:
 
             task = std::move(tasks.front());
             tasks.pop();
+            busy[i] = true;
           }
 
-          task(); // execute
+          task();
         }
         lean_finalize_thread();
       });
     }
+  }
+  size_t num_busy() {
+    size_t total = 0;
+    for (auto b : busy) {
+      total += b;
+    }
+    return total;
   }
 
   // non-copyable
@@ -84,6 +94,7 @@ public:
 
 private:
   std::vector<std::thread> workers;
+  std::vector<bool> busy;
   std::queue<std::function<void()>> tasks;
 
   std::mutex mutex;

@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
   size_t cache_size = 5;
   std::vector<std::string> examples;
   uint32_t timeout = 20000;
-  uint32_t n_workers = 4;
+  uint32_t n_workers = 8;
 
   // Loading input file
   std::ifstream fin(input_file);
@@ -65,13 +65,12 @@ int main(int argc, char *argv[]) {
   auto [header, body] = parse_header_and_body(examples[0]);
   lean_object *state = cache->get(header).get();
   auto start = high_resolution_clock::now();
-  lean_object *result = pyle::evaluate_one(examples[0], state, timeout);
+  lean_object *result = pyle::evaluate_one(examples[0], state, 0);
   auto [response, header_env, new_state] = pyle::parse_lean_output(result);
   cache->put(header, header_env);
   long duration =
     duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
-  std::cout << "Imported header in " << duration / 1000 << "s"
-            << std::endl;
+  std::cout << "Imported header in " << duration / 1000 << "s" << std::endl;
 
   {
     // Take a sample to process
@@ -81,8 +80,30 @@ int main(int argc, char *argv[]) {
 
     // Process
     auto start = high_resolution_clock::now();
-    auto [responses, durations, new_cache] =
-      pyle::evaluate_many(sample, cache.get(), timeout, n_workers);
+    std::vector<std::string> responses;
+    std::vector<long> durations;
+    void *new_cache;
+
+    if (n_workers > 1) {
+      auto tuple = pyle::evaluate_many(sample, cache.get(), timeout, n_workers);
+      responses = std::get<0>(tuple);
+      durations = std::get<1>(tuple);
+      new_cache = std::get<2>(tuple);
+    } else {
+      int i = 0;
+      for (const std::string &samp : sample) {
+        lean_object *state = cache->get(header).get();
+        auto [header, body] = parse_header_and_body(samp);
+        lean_object *result =
+          pyle::evaluate_one(state ? body : samp, state, timeout);
+        auto [response, header_env, new_state] =
+          pyle::parse_lean_output(result);
+        responses.push_back(response);
+        durations.push_back(0);
+        std::cout << "finished " << i << std::endl;
+        i++;
+      }
+    }
     long total =
       duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
     std::cout << "Total time: " << total << std::endl;
