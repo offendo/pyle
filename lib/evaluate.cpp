@@ -107,7 +107,14 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
 
       // Step 2. Run the lean code, and parse the output
       auto start = steady_clock::now();
-      lean_object *lean_response = evaluate_one(code, env.get(), timeout);
+      // If we found the env, DON'T PASS IN THE HEADER
+      // TODO make "with header" and "without header" separate functions
+      lean_object *lean_response;
+      if (env) {
+        lean_response = evaluate_one(body, env.get(), timeout);
+      } else {
+        lean_response = evaluate_one(code, env.get(), timeout);
+      }
       long duration =
         duration_cast<milliseconds>(steady_clock::now() - start).count();
       auto [json, header_env, final_state] = parse_lean_output(lean_response);
@@ -131,7 +138,7 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
     size_t done = 0;
     // Count futures that have completed
     for (auto &f : futures) {
-      if (f.valid() && f.wait_for(5ms) == std::future_status::ready) {
+      if (f.valid() && f.wait_for(0s) == std::future_status::ready) {
         ++done;
       }
     }
@@ -150,7 +157,7 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
     }
 
     // Avoid busy spinning
-    std::this_thread::sleep_for(50ms);
+    std::this_thread::sleep_for(100ms);
   }
   show_console_cursor(true);
 

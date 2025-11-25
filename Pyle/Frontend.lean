@@ -95,7 +95,7 @@ Wrapper for `IO.processCommands` that enables info states, and returns
 def processCommandsWithInfoTrees
     (inputCtx : Parser.InputContext) (parserState : Parser.ModuleParserState)
     (commandState : Command.State)  : IO (Command.State × List Message × List InfoTree) := do
-  -- let commandState := { commandState with infoState.enabled := true }
+  let commandState := { commandState with infoState.enabled := true }
   let s ← IO.processCommands inputCtx parserState commandState <&> Frontend.State.commandState
   pure (s, s.messages.toList, s.infoState.trees.toList)
 
@@ -134,24 +134,25 @@ def evaluate_one
   : IO $ String × Environment × Option Command.State  := do
   let fileName   := "<input>"
   let inputCtx   := Parser.mkInputContext input fileName
-  let (header, parserState, messages) ← Parser.parseHeader inputCtx
 
   let opts : Options := {}
-  let cmdStateBefore := (<-match env? with
+  let (cmdStateBefore, parserState) := (<-match env? with
   -- If we find it, go ahead and use it.
   | some env => do
-    return Command.mkState env messages opts
+    let emptyState := Parser.ModuleParserState.mk 0 false
+    return (Command.mkState env (opts := opts), emptyState)
   | none => do
+    let (header, parserState, messages) ← Parser.parseHeader inputCtx
     -- Otherwise, process the header, and insert it into the cache.
     let (env, messages) ← processHeader header opts messages inputCtx
-    return Command.mkState env messages opts)
+    return (Command.mkState env messages opts, parserState))
 
   -- Run commands
   -- let startTime <- IO.monoMsNow
   let (newState, messages, trees, err) <- (if timeout > 0 then
     do
       -- start a timer to cancel the job if needed
-      let result <- runWithTimeout (fun () => processCommandsWithInfoTrees inputCtx parserState cmdStateBefore) timeout
+      let result <- runWithTimeout (fun () => processCommandsWithInfoTrees inputCtx parserState cmdStateBefore) timeout .max
       (match result with
         | .error err => return (none, [], [], err.toString)
         | .ok (state, msgs, trees) => return (some state, msgs, trees, ""))
@@ -159,8 +160,6 @@ def evaluate_one
       let (state, msgs, trees) <- processCommandsWithInfoTrees inputCtx parserState cmdStateBefore
       pure (some state, msgs, trees, "")
   )
-  -- let endTime <- IO.monoMsNow
-  -- IO.println s!"({<-IO.getTID}) processCommandsWithInfoTrees: {endTime - startTime}ms"
   -- Parse output
   let tree := Json.arr (← trees.toArray.mapM fun t => t.toJson none)
   let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)

@@ -24,7 +24,7 @@ def parse_header(theorem: str):
 
 
 if __name__ == "__main__":
-    dataset = load_dataset( "Goedel-LM/Lean-workbook-proofs", split="train[:100]", num_proc=1)
+    dataset = load_dataset( "Goedel-LM/Lean-workbook-proofs", split="train[:25]", num_proc=1)
     dataset = dataset["full_proof"]
     # dataset = pd.read_json("benchmark.json")["full_theorem"]
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
         problems,
         state_cache=state_cache,
         timeout=20_000,
-        n_workers=1,
+        n_workers=8,
     )
     results = [
         {**json.loads(resp), "duration": duration}

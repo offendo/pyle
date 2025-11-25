@@ -62,7 +62,14 @@ py::tuple py_evaluate_one(
 
   // Step 2. Run the lean code, and parse the output
   auto start = high_resolution_clock::now();
-  lean_object *lean_response = evaluate_one(lean_code, env.get(), timeout);
+  // If we found the env, DON'T PASS IN THE HEADER
+  // TODO make "with header" and "without header" computation separate functions
+  lean_object *lean_response;
+  if (env) {
+    lean_response = evaluate_one(body, env.get(), timeout);
+  } else {
+    lean_response = evaluate_one(lean_code, env.get(), timeout);
+  }
   long duration =
     duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
   auto [response, header_env, final_state] = parse_lean_output(lean_response);
@@ -85,11 +92,19 @@ py::tuple py_evaluate_many(
   std::shared_ptr<Cache> state_cache =
     opt_cache.has_value() ? from_dict(opt_cache.value(), cache_size)
                           : make_cache(cache_size);
+  std::vector<std::string> responses;
+  std::vector<long> durations;
+  Cache *new_cache_ptr;
+  {
+    py::gil_scoped_release release_gil;
+    auto tuple =
+      evaluate_many(lean_code, state_cache.get(), timeout, n_workers);
+    responses = std::get<0>(tuple);
+    durations = std::get<1>(tuple);
+    new_cache_ptr = std::get<2>(tuple);
+  }
 
-  auto [responses, durations, new_cache_ptr] =
-    evaluate_many(lean_code, state_cache.get(), timeout, n_workers);
-
-  py::dict dict = to_dict(state_cache.get());
+  py::dict dict = to_dict(new_cache_ptr);
   return py::make_tuple(responses, durations, dict);
 }
 
