@@ -65,8 +65,7 @@ py::tuple py_evaluate_one(
   auto start = high_resolution_clock::now();
   // If we found the env, DON'T PASS IN THE HEADER
   // TODO make "with header" and "without header" computation separate functions
-  lean_object *lean_response =
-    evaluate_one(env ? body : lean_code, env.get(), timeout);
+  lean_object *lean_response = evaluate_one(lean_code, env.get(), timeout);
   long duration =
     duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
   auto [response, header_env, final_state] = parse_lean_output(lean_response);

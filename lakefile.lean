@@ -10,4 +10,4 @@ require "mathlib"
 lean_lib Pyle where
   defaultFacets := #[LeanLib.staticFacet]
   buildType := Lake.BuildType.release
-  -- moreLeancArgs := #["-Wall", "-O3"]
+  moreLeancArgs := #["-Wall", "-O3", "-g", "-pg"]

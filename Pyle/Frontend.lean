@@ -135,18 +135,17 @@ def evaluate_one
   : IO $ String × Environment × Option Command.State  := do
   let fileName   := "<input>"
   let inputCtx   := Parser.mkInputContext input fileName
+  let (header, parserState, messages) ← Parser.parseHeader inputCtx
 
   let opts : Options := {}
-  let (cmdStateBefore, parserState) := (<-match env? with
+  let cmdStateBefore := (<-match env? with
   -- If we find it, go ahead and use it.
   | some env => do
-    let emptyState : Parser.ModuleParserState := {}
-    return (Command.mkState env (opts := opts), emptyState)
+    return Command.mkState env (opts := opts)
   | none => do
-    let (header, parserState, messages) ← Parser.parseHeader inputCtx
     -- Otherwise, process the header, and insert it into the cache.
     let (env, messages) ← processHeader header opts messages inputCtx
-    return (Command.mkState env messages opts, parserState))
+    return Command.mkState env messages opts)
 
   -- Run commands
   let (newState, messages, trees, err) <- (if timeout > 0 then

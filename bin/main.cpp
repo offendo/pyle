@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
   size_t cache_size = 5;
   std::vector<std::string> examples;
   uint32_t timeout = 20000;
-  uint32_t n_workers = 8;
+  uint32_t n_workers = 1;
 
   // Loading input file
   std::ifstream fin(input_file);

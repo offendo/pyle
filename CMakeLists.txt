@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 project(pyle LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # set(CMAKE_CXX_FLAGS_DEBUG  "-g -pg -Wall")
-# set(CMAKE_CXX_FLAGS  "-O3 -Wall")
+set(CMAKE_CXX_FLAGS  "-O3 -Wall -pg -g")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
