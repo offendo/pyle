@@ -42,7 +42,8 @@ int main(int argc, char *argv[]) {
   size_t cache_size = 5;
   std::vector<std::string> examples;
   uint32_t timeout = 20000;
-  uint32_t n_workers = 1;
+  uint32_t n_workers = 4;
+  bool return_info_trees = false;
 
   // Loading input file
   std::ifstream fin(input_file);
@@ -82,13 +83,16 @@ int main(int argc, char *argv[]) {
     auto start = high_resolution_clock::now();
     std::vector<std::string> responses;
     std::vector<long> durations;
-    void *new_cache;
 
     if (n_workers > 1) {
-      auto tuple = pyle::evaluate_many(sample, cache.get(), timeout, n_workers);
+      auto tuple = pyle::evaluate_many(
+        sample,
+        cache.get(),
+        timeout,
+        n_workers,
+        return_info_trees);
       responses = std::get<0>(tuple);
       durations = std::get<1>(tuple);
-      new_cache = std::get<2>(tuple);
     } else {
       int i = 0;
       for (const std::string &samp : sample) {
