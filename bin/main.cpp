@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
         lean_object *state = cache->get(header).get();
         auto [header, body] = parse_header_and_body(samp);
         lean_object *result =
-          pyle::evaluate_one(state ? body : samp, state, timeout);
+          pyle::evaluate_one(samp, state, timeout);
         auto [response, header_env, new_state] =
           pyle::parse_lean_output(result);
         responses.push_back(response);
