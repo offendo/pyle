@@ -92,12 +92,37 @@ open Pyle Frontend
 Wrapper for `IO.processCommands` that enables info states, and returns
 (new command state, messages, info trees)
 -/
-def processCommandsWithInfoTrees
+partial def processCommandsWithInfoTrees
     (inputCtx : Parser.InputContext) (parserState : Parser.ModuleParserState)
-    (commandState : Command.State)  : IO (Command.State × List Message × List InfoTree) := do
+    (commandState : Command.State) (timeout : UInt32 := 0) :
+    IO (Command.State × List Message × List InfoTree) := do
   let commandState := { commandState with infoState.enabled := true }
-  let s ← IO.processCommands inputCtx parserState commandState <&> Frontend.State.commandState
+  -- Retain the snapshot tree so timeout cancellation reaches the parsing and
+  -- elaboration tokens, rather than only canceling an outer collector task.
+  let task ← Language.Lean.processCommands inputCtx parserState commandState
+  let root : Language.SnapshotTask Language.Lean.CommandParsedSnapshot := {
+    task, stx? := none, cancelTk? := none
+  }
+  let collect := fun () => collectCommands root.task.get root.task #[]
+  let s ← if timeout == 0 then collect () else do
+    match ← runWithTimeout collect timeout .dedicated root.cancelRec with
+    | .ok s => pure s
+    | .error e => throw e
   pure (s, s.messages.toList, s.infoState.trees.toList)
+where
+  collectCommands (initialSnap : Language.Lean.CommandParsedSnapshot)
+      (task : Task Language.Lean.CommandParsedSnapshot)
+      (commands : Array Language.Lean.CommandParsedSnapshot) : IO Command.State := do
+    let snap := task.get
+    let commands := commands.push snap
+    if let some next := snap.nextCmdSnap? then
+      collectCommands initialSnap next.task commands
+    else
+      let messages := Language.toSnapshotTree initialSnap
+        |>.getAll.map (·.diagnostics.msgLog) |>.foldl (· ++ ·) {}
+      let trees := commands.map (·.elabSnap.infoTreeSnap.get.infoTree?)
+        |>.filterMap id |>.toPArray'
+      return { snap.elabSnap.resultSnap.get.cmdState with messages, infoState.trees := trees }
 
 end Lean.Elab.IO
 
@@ -132,7 +157,9 @@ def evaluate_one
   (env? : Option Environment)
   (timeout : UInt32 := 0)
   (returnInfoTree : Bool := True)
-  : IO $ String × Environment × Option Command.State  := do
+  (persistImports : Bool := False)
+  (headerOnly : Bool := False)
+  : IO $ String × Option Environment × Option Command.State := do
   let fileName   := "<input>"
   let inputCtx   := Parser.mkInputContext input fileName
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
@@ -144,15 +171,19 @@ def evaluate_one
     pure (Command.mkState env (opts := opts), none)
   | none => do
     -- Otherwise, process the header, and insert it into the cache.
-    let (env, messages) ← processHeader header opts messages inputCtx
+    let (env, messages) ← processHeader header opts messages inputCtx (leakEnv := persistImports)
     let state := Command.mkState env messages opts
     pure (state, some state)
 
   -- Run commands
-  let (newState, messages, trees, err) <- (if timeout > 0 then
+  let (newState, messages, trees, err) <- (if headerOnly then
+    pure (none, [], [], "")
+    else if timeout > 0 then
     do
       -- start a timer to cancel the job if needed
-      let result <- runWithTimeout (fun () => processCommandsWithInfoTrees inputCtx parserState cmdStateBefore) timeout .dedicated
+      let result : Except IO.Error (Command.State × List Lean.Message × List InfoTree) ← try
+        pure (.ok (← processCommandsWithInfoTrees inputCtx parserState cmdStateBefore timeout))
+        catch e => pure (.error e)
       (match result with
         | .error err => return (none, [], [], err.toString)
         | .ok (state, msgs, trees) => return (some state, msgs, trees, ""))
@@ -166,10 +197,12 @@ def evaluate_one
     return Json.arr (← trees.toArray.mapM fun t => t.toJson none)
     else
     return Json.null)
-  let msgs := Json.arr (← messages.toArray.mapM fun m => m.toJson)
+  let msgs := Json.arr (← (cmdStateBefore.messages.toList ++ messages).toArray.mapM fun m => m.toJson)
   let tacs := Json.arr ((<- Pyle.tactics trees).toArray.map fun m => toJson m)
   let errs := Json.str err
 
   -- Return response, header state, and new state
   let response : EvalResponse := ⟨msgs, tree, tacs, errs⟩
-  return (toString $ toJson response, cmdStateBefore.env, headerState?)
+  -- A failed import must never become a reusable, apparently successful cache entry.
+  let cacheEnv := if cmdStateBefore.messages.hasErrors then none else some cmdStateBefore.env
+  return (toString $ toJson response, cacheEnv, headerState?)

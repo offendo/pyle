@@ -11,13 +11,14 @@ extern "C" void lean_init_task_manager();
 extern "C" void lean_io_mark_end_initialization();
 extern "C" void lean_initialize_thread();
 extern "C" void lean_finalize_thread();
+extern "C" lean_object *lean_enable_initializer_execution();
 
 // exported Lean functions
 extern "C" lean_object *run_search_path_init();
 extern "C" lean_object *
 initialize_pyle_Pyle_Frontend(uint8_t builtin);
 extern "C" lean_object *
-lean_evaluate(lean_obj_arg, lean_obj_arg, uint32_t, bool);
+lean_evaluate(lean_obj_arg, lean_obj_arg, uint32_t, bool, bool, bool);
 extern "C" lean_object *lean_cache_mk(uint32_t);
 extern "C" lean_object *lean_cache_get(lean_obj_arg, lean_obj_arg);
 extern "C" void lean_cache_print(lean_obj_arg);

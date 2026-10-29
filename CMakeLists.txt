@@ -21,6 +21,7 @@ execute_process(
 )
 set(LEAN_INCLUDE_DIR "${LEAN_PREFIX}/include")
 set(LEAN_LIB_DIR     "${LEAN_PREFIX}/lib/lean")
+set(PYLE_LEAN_RUNTIME_DIR "" CACHE PATH "Optional directory containing a compatible patched libleanshared")
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 3) run lake build now
@@ -49,7 +50,14 @@ set_target_properties(Pyle PROPERTIES IMPORTED_LOCATION "${PYLELIB}")
 # 5) import Lean’s runtime libraries
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 foreach(libname IN ITEMS Init_shared leanshared_1 leanshared)
-    find_library(${libname}_LIB NAMES ${libname} PATHS ${LEAN_LIB_DIR} NO_DEFAULT_PATH)
+    if(libname STREQUAL "leanshared" AND PYLE_LEAN_RUNTIME_DIR)
+        set(${libname}_LIB "${PYLE_LEAN_RUNTIME_DIR}/libleanshared${CMAKE_SHARED_LIBRARY_SUFFIX}")
+        if(NOT EXISTS "${${libname}_LIB}")
+            message(FATAL_ERROR "Patched Lean runtime does not exist: ${${libname}_LIB}")
+        endif()
+    else()
+        find_library(${libname}_LIB NAMES ${libname} PATHS ${LEAN_LIB_DIR} NO_DEFAULT_PATH)
+    endif()
     if (NOT ${libname}_LIB)
         message(FATAL_ERROR "Could not find lib${libname} in ${LEAN_LIB_DIR}")
     endif()
@@ -98,6 +106,11 @@ target_include_directories(pyle PRIVATE
 )
 
 target_link_libraries(pyle PRIVATE
+    # Lean bundles LLVM's unwinder. GCC's personality routine requires GCC's
+    # unwinder to precede it in the dynamic loader scope (including in Conda).
+    $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--no-as-needed>
+    $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:gcc_s>
+    $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--as-needed>
     cpyle
     Pyle
     Init_shared
@@ -124,6 +137,9 @@ target_include_directories(pyle_bin PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_link_libraries(pyle_bin PRIVATE
+    $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--no-as-needed>
+    $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:gcc_s>
+    $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--as-needed>
     jsoncpp_lib
     cpyle
     Pyle
@@ -137,8 +153,8 @@ set_target_properties(pyle_bin PROPERTIES
     CXX_STANDARD 17
     CMAKE_CXX_STANDARD_REQUIRED TRUE
     BUILD_WITH_INSTALL_RPATH ON
-    BUILD_RPATH "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR};${PYTHON_LIB_DIR}"
-    INSTALL_RPATH "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR};${PYTHON_LIB_DIR}"
+    BUILD_RPATH "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR};${LAKE_LIB_DIR};${PYTHON_LIB_DIR}"
+    INSTALL_RPATH "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR};${LAKE_LIB_DIR};${PYTHON_LIB_DIR}"
 )
 
 # Optionally install it:
@@ -158,12 +174,18 @@ set_target_properties(pyle PROPERTIES
     CXX_STANDARD            17
     CMAKE_CXX_STANDARD_REQUIRED TRUE
     BUILD_WITH_INSTALL_RPATH ON
-    BUILD_RPATH             "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
-    INSTALL_RPATH           "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
+    BUILD_RPATH             "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
+    INSTALL_RPATH           "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
 )
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 8) Explicitly install
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
+if(PYLE_LEAN_RUNTIME_DIR AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # `lake env` prepends the stock Lean directory to LD_LIBRARY_PATH. An
+    # explicitly selected compatible runtime must take precedence over that.
+    target_link_options(pyle PRIVATE "-Wl,--disable-new-dtags")
+    target_link_options(pyle_bin PRIVATE "-Wl,--disable-new-dtags")
+endif()
 install(TARGETS pyle DESTINATION .)
 install(FILES ${PYLELIB} DESTINATION .)

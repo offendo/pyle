@@ -13,8 +13,27 @@ using namespace std::chrono;
 
 namespace pyle {
 
+namespace {
+// Lean's allocator and runtime have thread-local state. Python callers need
+// the same setup as native ThreadPool workers, once per calling thread.
+struct CallingThread {
+  bool initialized = false;
+  bool owned = false;
+  void ensure() {
+    if (!initialized) {
+      lean_initialize_thread();
+      initialized = owned = true;
+    }
+  }
+  ~CallingThread() { if (owned) lean_finalize_thread(); }
+};
+thread_local CallingThread calling_thread;
+}
+
 pybind11::capsule pack_lean_object(lean_object *obj) {
+  lean_inc(obj); // Each capsule owns its own reference.
   return pybind11::capsule(obj, "lean_object", [](PyObject *capsule) {
+    calling_thread.ensure();
     cleanup_lean_object(PyCapsule_GetPointer(capsule, "lean_object"));
   });
 }
@@ -31,6 +50,7 @@ std::shared_ptr<Cache> from_dict(pybind11::dict dict, size_t size) {
     auto key = pair.first.cast<std::string>();
     lean_object *env = static_cast<lean_object *>(
       PyCapsule_GetPointer(pair.second.ptr(), "lean_object"));
+    if (!env) throw py::error_already_set();
     cache->put(key, env);
   }
   return cache;
@@ -53,6 +73,7 @@ py::tuple py_evaluate_one(
   uint32_t cache_size,
   bool return_info_tree,
   bool persist) {
+  calling_thread.ensure();
   // Unwrap the cache
   std::shared_ptr<Cache> state_cache =
     opt_cache.has_value() ? from_dict(opt_cache.value(), cache_size)
@@ -66,15 +87,17 @@ py::tuple py_evaluate_one(
   auto start = high_resolution_clock::now();
   // If we found the env, DON'T PASS IN THE HEADER
   // TODO make "with header" and "without header" computation separate functions
-  lean_object *lean_response =
-    evaluate_one(lean_code, env.get(), timeout, persist);
-  long duration =
-    duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
-  auto [response, header_env, final_state] = parse_lean_output(lean_response);
-
-  // Step 3. Run the cache update.
-  lean_inc(header_env);
-  state_cache->put(header, header_env);
+  std::string response;
+  long duration;
+  {
+    py::gil_scoped_release release_gil;
+    std::unique_ptr<lean_object, decltype(&lean_dec)> lean_response(
+      evaluate_one(lean_code, env.get(), timeout, return_info_tree, persist), &lean_dec);
+    duration = duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
+    auto [json, header_env, final_state] = parse_lean_output(lean_response.get());
+    response = std::move(json);
+    if (header_env) state_cache->put(header, header_env);
+  }
   py::dict cache_dict = to_dict(state_cache.get());
   return py::make_tuple(response, duration, cache_dict);
 }
@@ -86,6 +109,7 @@ py::tuple py_evaluate_many(
   uint32_t n_workers,
   uint32_t cache_size,
   bool return_info_tree) {
+  calling_thread.ensure();
 
   // Unwrap the cache
   std::shared_ptr<Cache> state_cache =
@@ -97,7 +121,7 @@ py::tuple py_evaluate_many(
   {
     py::gil_scoped_release release_gil;
     auto tuple =
-      evaluate_many(lean_code, state_cache.get(), timeout, n_workers);
+      evaluate_many(lean_code, state_cache.get(), timeout, n_workers, return_info_tree);
     responses = std::get<0>(tuple);
     durations = std::get<1>(tuple);
     new_cache_ptr = std::get<2>(tuple);
@@ -114,6 +138,7 @@ py::tuple py_parse_header_and_body(const std::string &s) {
 
 void initialize() {
   lean_initialize();
+  calling_thread.initialized = true;
   // lean_initialize_runtime_module();
   uint8_t builtin = 1;
   lean_init_search_path(lean_io_mk_world());
@@ -140,7 +165,9 @@ PYBIND11_MODULE(pyle, m) {
   m.def(
     "evaluate",
     &pyle::py_evaluate_one,
-    R"(Evaluates input lean code. Times out after `timeout` ms.)",
+    R"(Evaluates input Lean code, releasing the GIL. Timeout is in ms.
+persist=True freezes newly imported environments until process exit to avoid
+atomic reference-count traffic. It does not freeze an existing cache entry.)",
     py::arg("lean_code"),
     py::arg("state_cache") = py::none(),
     py::arg("timeout") = 0,
