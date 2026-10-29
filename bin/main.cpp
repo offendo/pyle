@@ -17,7 +17,7 @@ void initialize() {
   // lean_initialize_runtime_module();
   uint8_t builtin = 1;
   lean_init_search_path(lean_io_mk_world());
-  lean_object *res = initialize_Pyle_Frontend(builtin, lean_io_mk_world());
+  lean_object *res = initialize_pyle_Pyle_Frontend(builtin);
   if (lean_io_result_is_ok(res)) {
     lean_dec_ref(res);
   } else {
@@ -38,11 +38,11 @@ int main(int argc, char *argv[]) {
   // Processing parameters
   std::string input_file = "examples.json";
   std::string output_file = "benchmark.json";
-  size_t sample_size = 25;
+  size_t sample_size = 100;
   size_t cache_size = 5;
   std::vector<std::string> examples;
   uint32_t timeout = 20000;
-  uint32_t n_workers = 4;
+  uint32_t n_workers = 20;
   bool return_info_trees = false;
 
   // Loading input file
@@ -66,9 +66,10 @@ int main(int argc, char *argv[]) {
   auto [header, body] = parse_header_and_body(examples[0]);
   lean_object *state = cache->get(header).get();
   auto start = high_resolution_clock::now();
-  lean_object *result = pyle::evaluate_one(examples[0], state, 0);
-  auto [response, header_env, new_state] = pyle::parse_lean_output(result);
-  cache->put(header, header_env);
+  std::unique_ptr<lean_object, decltype(&lean_dec)> result(
+    pyle::evaluate_one(examples[0], state, 0, false, true), &lean_dec);
+  auto [response, header_env, new_state] = pyle::parse_lean_output(result.get());
+  if (header_env) cache->put(header, header_env);
   long duration =
     duration_cast<milliseconds>(high_resolution_clock::now() - start).count();
   std::cout << "Imported header in " << duration / 1000 << "s" << std::endl;
@@ -98,10 +99,10 @@ int main(int argc, char *argv[]) {
       for (const std::string &samp : sample) {
         lean_object *state = cache->get(header).get();
         auto [header, body] = parse_header_and_body(samp);
-        lean_object *result =
-          pyle::evaluate_one(samp, state, timeout);
+        std::unique_ptr<lean_object, decltype(&lean_dec)> result(
+          pyle::evaluate_one(samp, state, timeout), &lean_dec);
         auto [response, header_env, new_state] =
-          pyle::parse_lean_output(result);
+          pyle::parse_lean_output(result.get());
         responses.push_back(response);
         durations.push_back(0);
         std::cout << "finished " << i << std::endl;

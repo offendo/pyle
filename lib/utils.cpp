@@ -44,6 +44,11 @@ parse_header_and_body(const std::string &s) {
   // start index of the last line
   size_t header_last_line = s.rfind("import");
   size_t header_end = s.find("\n", header_last_line);
+  if (header_end == std::string::npos) {
+    std::string header = s.substr(header_start);
+    trim(header);
+    return std::make_pair(header, "");
+  }
   std::string header = s.substr(header_start, header_end - header_start);
   std::string body = s.substr(header_end, s.size() - header_end);
 

@@ -1,0 +1,49 @@
+--- a/src/library/ir_interpreter.cpp
++++ b/src/library/ir_interpreter.cpp
+@@ -377,6 +377,11 @@
+ name_hash_map<native_symbol_cache_entry> * g_native_symbol_cache;
+ std::shared_mutex * g_native_symbol_cache_mutex;
+ 
++// Interpreter instances are short-lived. Keep a small native-address cache per
++// runtime thread so repeat hits do not contend on the process-wide shared mutex.
++// This stores only names and native addresses, never environments or IR bodies.
++MK_THREAD_LOCAL_GET_DEF(name_hash_map<native_symbol_cache_entry>, get_thread_native_symbol_cache)
++
+ class interpreter {
+     // stack of IR variable slots
+     std::vector<value> m_arg_stack;
+@@ -829,10 +834,18 @@
+         if (e != m_symbol_cache.end()) {
+             return e->second;
+         }
++        auto & thread_cache = get_thread_native_symbol_cache();
++        auto te = thread_cache.find(fn);
++        if (te != thread_cache.end()) {
++            symbol_cache_entry e_new { get_decl(fn), te->second };
++            m_symbol_cache.insert({ fn, e_new });
++            return e_new;
++        }
+         std::shared_lock<std::shared_mutex> lock(*g_native_symbol_cache_mutex);
+         auto ne = g_native_symbol_cache->find(fn);
+         if (ne != g_native_symbol_cache->end()) {
+             symbol_cache_entry e_new { get_decl(fn), ne->second };
++            thread_cache.insert({ fn, e_new.m_native });
+             m_symbol_cache.insert({ fn, e_new });
+             return e_new;
+         }
+@@ -841,6 +854,7 @@
+         ne = g_native_symbol_cache->find(fn);
+         if (ne != g_native_symbol_cache->end()) {
+             symbol_cache_entry e_new { get_decl(fn), ne->second };
++            thread_cache.insert({ fn, e_new.m_native });
+             m_symbol_cache.insert({ fn, e_new });
+             return e_new;
+         }
+@@ -864,6 +878,7 @@
+             }
+         }
+         g_native_symbol_cache->insert({ fn, e_new.m_native });
++        thread_cache.insert({ fn, e_new.m_native });
+         m_symbol_cache.insert({ fn, e_new });
+         return e_new;
+     }

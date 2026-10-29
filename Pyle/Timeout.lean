@@ -11,32 +11,18 @@ def runWithTimeout
   (func : Unit → IO β)
   (timeout : UInt32)
   (prio : Task.Priority := .max)
+  (onTimeout : BaseIO Unit := pure ())
   : IO (Except IO.Error β) := unsafe do
 
-  let start <- IO.monoMsNow
-  -- spawn both tasks using Task.spawn
-  let job <- IO.asTask (do
-    let result ← func ()
-    return some result
-  ) prio
-
-  let timer <- IO.asTask do
-    IO.sleep timeout
-    return none
-
-  -- wait for whichever finishes first
-  let result ← IO.waitAny [job, timer]
-  let stop <- IO.monoMsNow
-
-  -- cancel both
-  IO.cancel job
-  IO.cancel timer
-
-  -- print result and return
-  match result with
-  | .ok (some val) => do
-    return .ok val
-  | .ok (none) => do
-    return .error (IO.userError s!"timeout after {timeout}ms")
-  | .error err => do
-    return .error err
+  let start ← IO.monoMsNow
+  let job ← IO.asTask (func ()) prio
+  -- Poll on the caller instead of putting sleeping timer tasks in Lean's pool.
+  while !(← IO.hasFinished job) do
+    if (← IO.monoMsNow) - start ≥ timeout.toNat then
+      onTimeout
+      -- IO.cancel alone does not cancel elaboration: its snapshot tokens must
+      -- be set. Join the collector so batches cannot accumulate orphan jobs.
+      let _ ← IO.wait job
+      return .error (IO.userError s!"timeout after {timeout}ms")
+    IO.sleep 1
+  return ← IO.wait job

@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <stdexcept>
 
 namespace pyle {
 
@@ -50,6 +51,11 @@ Cache::put(const std::string header, lean_object *state) {
     lru.push_back(header);
     return cache[header];
   } else {
+    if (size == 0)
+      throw std::invalid_argument("cache_size must be positive");
+    // put borrows its input; the cache owns an independent, thread-safe ref.
+    lean_mark_mt(state);
+    lean_inc(state);
     // Otherwise, we have to add it to the cache. If it's at size, gotta pop
     // the LRU element.
     if (cache.size() == size) {
@@ -65,6 +71,7 @@ Cache::put(const std::string header, lean_object *state) {
       lean_dec(s);
     });
     cache.insert_or_assign(header, new_state);
+    lru.push_back(header);
     // Note - we return the value we just inserted because we will need to use
     // it to process the associated theorem. Instead of doing a second get()
     // call, just return here to ensure thread safety. Otherwise, it might
@@ -90,9 +97,9 @@ void Cache::erase(const std::string header) {
 }
 
 void Cache::erase_all() {
-  for (auto &it : cache) {
-    erase(it.first);
-  }
+  const std::lock_guard<std::mutex> lock(mutex);
+  cache.clear();
+  lru.clear();
 }
 
 } // namespace pyle

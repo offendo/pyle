@@ -11,7 +11,8 @@ py::tuple py_evaluate_one(
   std::optional<py::dict> dict,
   uint32_t timeout = 0,
   uint32_t cache_size = 1,
-  bool return_info_trees = true);
+  bool return_info_trees = true,
+  bool persist = false);
 
 py::tuple py_evaluate_many(
   const std::vector<std::string> &lean_code,
