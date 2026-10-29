@@ -66,7 +66,7 @@ int main(int argc, char *argv[]) {
   auto [header, body] = parse_header_and_body(examples[0]);
   lean_object *state = cache->get(header).get();
   auto start = high_resolution_clock::now();
-  lean_object *result = pyle::evaluate_one(examples[0], state, 0);
+  lean_object *result = pyle::evaluate_one(examples[0], state, 0, false, true);
   auto [response, header_env, new_state] = pyle::parse_lean_output(result);
   cache->put(header, header_env);
   long duration =

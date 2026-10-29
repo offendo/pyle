@@ -46,7 +46,8 @@ lean_obj_res evaluate_one(
   const std::string &lean_code,
   lean_obj_arg state,
   uint32_t timeout,
-  bool return_info_trees) {
+  bool return_info_trees,
+  bool persist) {
 
   // Box the cstring into a lean_object. This object will be consumed by the
   // function
@@ -67,6 +68,10 @@ lean_obj_res evaluate_one(
   // pyle::evaluate()
   // - i.e., this is not a recursive call.
   auto out = lean_evaluate(boxed, opt_state, timeout, return_info_trees);
+  if (persist) {
+    lean_mark_mt(out);
+    lean_mark_persistent(out);
+  }
   return out;
 }
 
@@ -112,7 +117,7 @@ std::tuple<std::vector<std::string>, std::vector<long>, Cache *> evaluate_many(
       // If we found the env, DON'T PASS IN THE HEADER
       // TODO make "with header" and "without header" separate functions
       lean_object *lean_response =
-        evaluate_one(code, env.get(), timeout, return_info_trees);
+        evaluate_one(code, env.get(), timeout, return_info_trees, false);
       long duration =
         duration_cast<milliseconds>(steady_clock::now() - start).count();
       auto [json, header_env, final_state] = parse_lean_output(lean_response);

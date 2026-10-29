@@ -12,7 +12,8 @@ lean_obj_res evaluate_one(
   const std::string &lean_code,
   lean_obj_arg state,
   uint32_t timeout,
-  bool return_info_trees = true);
+  bool return_info_trees = true,
+  bool persist = false);
 
 /* Utility function to parse output from lean tuple object to std::tuple */
 std::tuple<std::string, lean_object *, lean_object *>
