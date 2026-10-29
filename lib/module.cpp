@@ -117,7 +117,7 @@ void initialize() {
   // lean_initialize_runtime_module();
   uint8_t builtin = 1;
   lean_init_search_path(lean_io_mk_world());
-  lean_object *res = initialize_Pyle_Frontend(builtin, lean_io_mk_world());
+  lean_object *res = initialize_pyle_Pyle_Frontend(builtin);
   if (lean_io_result_is_ok(res)) {
     lean_dec_ref(res);
   } else {
@@ -145,7 +145,8 @@ PYBIND11_MODULE(pyle, m) {
     py::arg("state_cache") = py::none(),
     py::arg("timeout") = 0,
     py::arg("cache_size") = 5,
-    py::arg("return_info_tree") = false);
+    py::arg("return_info_tree") = false,
+    py::arg("persist") = false);
 
   m.def(
     "evaluate_many",
@@ -156,8 +157,7 @@ PYBIND11_MODULE(pyle, m) {
     py::arg("timeout") = 0,
     py::arg("n_workers") = 1,
     py::arg("cache_size") = 5,
-    py::arg("return_info_tree") = false,
-    py::arg("persist") = false);
+    py::arg("return_info_tree") = false);
 
   m.def(
     "parse_header_and_body",

@@ -57,12 +57,15 @@ def kind : Info → String
   | .ofCommandInfo        _ => "CommandInfo"
   | .ofMacroExpansionInfo _ => "MacroExpansionInfo"
   | .ofOptionInfo         _ => "OptionInfo"
+  | .ofErrorNameInfo      _ => "ErrorNameInfo"
   | .ofFieldInfo          _ => "FieldInfo"
   | .ofCompletionInfo     _ => "CompletionInfo"
   | .ofUserWidgetInfo     _ => "UserWidgetInfo"
   | .ofCustomInfo         _ => "CustomInfo"
   | .ofFVarAliasInfo      _ => "FVarAliasInfo"
   | .ofFieldRedeclInfo    _ => "FieldRedeclInfo"
+  | .ofDocInfo            _ => "DocInfo"
+  | .ofDocElabInfo         _ => "DocElabInfo"
   | .ofChoiceInfo         _ => "ChoiceInfo"
   | .ofDelabTermInfo      _ => "DelabTermInfo"
 
@@ -74,6 +77,7 @@ def stx? : Info → Option Syntax
   | .ofCommandInfo        info => info.stx
   | .ofMacroExpansionInfo info => info.stx
   | .ofOptionInfo         info => info.stx
+  | .ofErrorNameInfo      _    => none
   | .ofFieldInfo          info => info.stx
   | .ofCompletionInfo     info => info.stx
   | .ofUserWidgetInfo     info => info.stx
@@ -82,6 +86,8 @@ def stx? : Info → Option Syntax
   | .ofFieldRedeclInfo    info => info.stx
   | .ofChoiceInfo         info => info.stx
   | .ofDelabTermInfo      info => info.stx
+  | .ofDocInfo            info => info.stx
+  | .ofDocElabInfo         info => info.stx
 
 /-- Is the `Syntax` for this `Lean.Elab.Info` original, or synthetic? -/
 def isOriginal (i : Info) : Bool :=

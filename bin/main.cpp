@@ -17,7 +17,7 @@ void initialize() {
   // lean_initialize_runtime_module();
   uint8_t builtin = 1;
   lean_init_search_path(lean_io_mk_world());
-  lean_object *res = initialize_Pyle_Frontend(builtin, lean_io_mk_world());
+  lean_object *res = initialize_pyle_Pyle_Frontend(builtin);
   if (lean_io_result_is_ok(res)) {
     lean_dec_ref(res);
   } else {

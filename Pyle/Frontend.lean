@@ -21,7 +21,7 @@ def tactics (trees : List InfoTree) : IO (List Pyle.Tactic) :=
   trees.flatMap InfoTree.tactics |>.mapM
     fun ⟨ctx, stx, _, goals, pos, endPos, ns⟩ => do
       -- let proofState := some (← ProofSnapshot.create ctx none env? goals rootGoals)
-      let goals := s!"{(← ctx.ppGoals goals)}".trim
+      let goals := s!"{(← ctx.ppGoals goals)}".trimAscii.toString
       let tactic := Format.pretty (← ppTactic ctx stx)
       --let proofStateId ← proofState.mapM recordProofSnapshot
       return Pyle.Tactic.of goals tactic pos endPos none ns
@@ -138,14 +138,15 @@ def evaluate_one
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
 
   let opts : Options := {}
-  let cmdStateBefore := (<-match env? with
+  let (cmdStateBefore, headerState?) ← match env? with
   -- If we find it, go ahead and use it.
   | some env => do
-    return Command.mkState env (opts := opts)
+    pure (Command.mkState env (opts := opts), none)
   | none => do
     -- Otherwise, process the header, and insert it into the cache.
     let (env, messages) ← processHeader header opts messages inputCtx
-    return Command.mkState env messages opts)
+    let state := Command.mkState env messages opts
+    pure (state, some state)
 
   -- Run commands
   let (newState, messages, trees, err) <- (if timeout > 0 then
@@ -171,4 +172,4 @@ def evaluate_one
 
   -- Return response, header state, and new state
   let response : EvalResponse := ⟨msgs, tree, tacs, errs⟩
-  return (toString $ toJson response, cmdStateBefore.env, newState)
+  return (toString $ toJson response, cmdStateBefore.env, headerState?)
