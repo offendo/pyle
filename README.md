@@ -18,9 +18,7 @@ Lake downloads the pinned dependencies, so the first build requires network
 access. Windows source installs are not currently supported.
 
 The build checks the Lean version, runs `lake build`, and compiles the Python
-extension. The standalone testing executable and its jsoncpp dependency are
-excluded by default. To build that executable manually, configure CMake with
-`-DPYLE_BUILD_CLI=ON`.
+extension.
 
 ```python
 import json

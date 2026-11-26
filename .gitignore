@@ -2,3 +2,5 @@
 /.cache/
 /.zed/
 /build/
+
+/bin/

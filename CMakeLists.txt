@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.18)
 project(pyle LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # set(CMAKE_CXX_FLAGS_DEBUG  "-g -pg -Wall")
-option(PYLE_BUILD_CLI "Build the standalone testing executable" OFF)
 if(WIN32)
     message(FATAL_ERROR "Pyle source installs currently support Linux and macOS only")
 endif()
@@ -158,44 +157,6 @@ if (DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
 endif()
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
-# X) build the standalone binary
-# ––––––––––––––––––––––––––––––––––––––––––––––––––
-if(PYLE_BUILD_CLI)
-    find_package(jsoncpp REQUIRED)
-    add_executable(pyle_bin
-        bin/main.cpp
-    )
-
-    target_include_directories(pyle_bin PRIVATE
-        ${LEAN_INCLUDE_DIR}
-        ${Python3_INCLUDE_DIRS}
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    target_link_libraries(pyle_bin PRIVATE
-        $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--no-as-needed>
-        $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:gcc_s>
-        $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--as-needed>
-        jsoncpp_lib
-        cpyle
-        Pyle
-        Init_shared
-        leanshared_1
-        leanshared
-    )
-
-
-    set_target_properties(pyle_bin PROPERTIES
-        CXX_STANDARD 17
-        CMAKE_CXX_STANDARD_REQUIRED TRUE
-        BUILD_WITH_INSTALL_RPATH ON
-        BUILD_RPATH "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR}"
-        INSTALL_RPATH "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR}"
-    )
-
-endif()
-
-
-# ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 7) RPATH so runtime can find the .so files
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 
@@ -215,8 +176,5 @@ if(PYLE_LEAN_RUNTIME_DIR AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # `lake env` prepends the stock Lean directory to LD_LIBRARY_PATH. An
     # explicitly selected compatible runtime must take precedence over that.
     target_link_options(pyle PRIVATE "-Wl,--disable-new-dtags")
-    if(PYLE_BUILD_CLI)
-        target_link_options(pyle_bin PRIVATE "-Wl,--disable-new-dtags")
-    endif()
 endif()
 install(TARGETS pyle DESTINATION .)

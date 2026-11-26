@@ -30,8 +30,8 @@ minimum-version = "0.9"
 wheel.expand-macos-universal-tags = true
 wheel.install-dir = "."
 # Keep source installs reproducible and omit local Lake/compiler artifacts.
-sdist.include = ["/CMakeLists.txt", "/lean-toolchain", "/lakefile.lean", "/lake-manifest.json", "/Pyle.lean", "/Pyle/**", "/include/**", "/lib/**", "/bin/**", "/patch-lean.sh", "/scripts/build_lean_runtime.py", "/patches/*.patch"]
-sdist.exclude = [".lake/**", "build/**", "benchmarks/**", "gmon.out"]
+sdist.include = ["/CMakeLists.txt", "/lean-toolchain", "/lakefile.lean", "/lake-manifest.json", "/Pyle.lean", "/Pyle/**", "/include/**", "/lib/**", "/patch-lean.sh", "/scripts/build_lean_runtime.py", "/patches/*.patch"]
+sdist.exclude = ["/bin/**", ".lake/**", "build/**", "benchmarks/**", "gmon.out"]
 
 [tool.scikit-build.cmake]
 source-dir = "."
