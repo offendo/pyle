@@ -153,7 +153,13 @@ void initialize() {
   }
   lean_init_task_manager();
   lean_io_mark_end_initialization();
-  run_search_path_init();
+  lean_object *path_result = pyle_init_search_path(lean_mk_string(PYLE_LEAN_PREFIX));
+  if (!lean_io_result_is_ok(path_result)) {
+    lean_io_result_show_error(path_result);
+    lean_dec(path_result);
+    throw std::runtime_error("Could not initialize Pyle module search paths");
+  }
+  lean_dec(path_result);
 }
 
 } // namespace pyle

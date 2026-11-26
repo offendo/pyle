@@ -14,6 +14,7 @@ extern "C" void lean_finalize_thread();
 extern "C" lean_object *lean_enable_initializer_execution();
 
 // exported Lean functions
+extern "C" lean_object *pyle_init_search_path(lean_obj_arg);
 extern "C" lean_object *run_search_path_init();
 extern "C" lean_object *
 initialize_pyle_Pyle_Frontend(uint8_t builtin);

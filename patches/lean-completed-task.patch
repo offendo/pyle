@@ -1,0 +1,39 @@
+--- a/src/runtime/object.cpp
++++ b/src/runtime/object.cpp
+@@ -927,15 +927,17 @@
+     void resolve_core(unique_lock<mutex> & lock, lean_task_object * t, object * v) {
+         mark_mt(v);
+         t->m_value = v;
+-        lean_task_imp * imp = t->m_imp.exchange(nullptr, std::memory_order_relaxed);
+-        handle_finished(lock, t, imp);
++        lean_task_imp * imp = t->m_imp.exchange(nullptr, std::memory_order_acq_rel);
++        // The final owner can free t immediately after the exchange above.
++        // Only the detached implementation may be accessed from here on.
++        handle_finished(lock, imp);
+         /* After the task has been finished and we propagated
+            dependencies, we can release `imp` and keep just the value */
+         free_task_imp(imp);
+         m_task_finished_cv.notify_all();
+     }
+ 
+-    void handle_finished(unique_lock<mutex> & lock, lean_task_object * t, lean_task_imp * imp) {
++    void handle_finished(unique_lock<mutex> & lock, lean_task_imp * imp) {
+         lean_task_object * it = imp->m_head_dep;
+         imp->m_head_dep = nullptr;
+         while (it) {
+@@ -1058,6 +1060,15 @@
+     }
+ 
+     void deactivate_task(lean_task_object * t) {
++        // Completion release-publishes a null implementation after m_value.
++        // The resolver only uses the detached implementation after that point,
++        // so the final owner can reclaim a completed task without the pool lock.
++        if (t->m_imp.load(std::memory_order_acquire) == nullptr) {
++            lean_assert(t->m_value != nullptr);
++            lean_dec(t->m_value);
++            free_task(t);
++            return;
++        }
+         unique_lock<mutex> lock(m_mutex);
+         if (object * v = t->m_value) {
+             lean_assert(t->m_imp.load(std::memory_order_relaxed) == nullptr);

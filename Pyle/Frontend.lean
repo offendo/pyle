@@ -126,6 +126,12 @@ where
 
 end Lean.Elab.IO
 
+-- Python uses the same toolchain for module lookup that it linked at build time.
+@[export pyle_init_search_path]
+def pyleInitSearchPath (sysroot : String) : IO Unit := unsafe do
+  Lean.initSearchPath sysroot
+  enableInitializersExecution
+
 @[export run_search_path_init]
 def runSearchPathInit : IO Unit := unsafe do
   Lean.initSearchPath (← Lean.findSysroot)

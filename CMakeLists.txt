@@ -1,9 +1,18 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.18)
 project(pyle LANGUAGES C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # set(CMAKE_CXX_FLAGS_DEBUG  "-g -pg -Wall")
-set(CMAKE_CXX_FLAGS  "-O3 -Wall -pg -g -lpthread")
+option(PYLE_BUILD_CLI "Build the standalone testing executable" OFF)
+if(WIN32)
+    message(FATAL_ERROR "Pyle source installs currently support Linux and macOS only")
+endif()
+find_package(Threads REQUIRED)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+if(APPLE)
+    set(rpt "@loader_path")
+else()
+    set(rpt "$ORIGIN")
+endif()
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 1) find pybind11
@@ -14,20 +23,42 @@ find_package(pybind11 CONFIG REQUIRED)
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 2) locate Lean sysroot
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
+find_program(LEAN_EXECUTABLE lean REQUIRED)
+find_program(LAKE_EXECUTABLE lake REQUIRED)
+file(STRINGS "${CMAKE_SOURCE_DIR}/lean-toolchain" PYLE_TOOLCHAIN LIMIT_COUNT 1)
+string(REGEX REPLACE ".*:v" "" PYLE_LEAN_VERSION "${PYLE_TOOLCHAIN}")
 execute_process(
-  COMMAND lean --print-prefix
+  COMMAND "${LEAN_EXECUTABLE}" --version
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  OUTPUT_VARIABLE LEAN_VERSION_OUTPUT
+  ERROR_VARIABLE LEAN_ERROR
+  RESULT_VARIABLE LEAN_RESULT
+)
+string(REPLACE "." "\\." PYLE_LEAN_VERSION_PATTERN "${PYLE_LEAN_VERSION}")
+if(NOT LEAN_RESULT EQUAL 0 OR NOT LEAN_VERSION_OUTPUT MATCHES "version ${PYLE_LEAN_VERSION_PATTERN}([, )]|$)")
+  message(FATAL_ERROR "Pyle requires ${PYLE_TOOLCHAIN}. Install it with `elan toolchain install ${PYLE_TOOLCHAIN}`. ${LEAN_ERROR} Found: ${LEAN_VERSION_OUTPUT}")
+endif()
+execute_process(
+  COMMAND "${LEAN_EXECUTABLE}" --print-prefix
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
   OUTPUT_VARIABLE LEAN_PREFIX
   OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE LEAN_PREFIX_RESULT
 )
+if(NOT LEAN_PREFIX_RESULT EQUAL 0 OR NOT EXISTS "${LEAN_PREFIX}/include/lean/lean.h")
+  message(FATAL_ERROR "Could not locate the installed Lean toolchain")
+endif()
+# Use lake from the validated toolchain, rather than another version on PATH.
+set(LAKE_EXECUTABLE "${LEAN_PREFIX}/bin/lake")
 set(LEAN_INCLUDE_DIR "${LEAN_PREFIX}/include")
 set(LEAN_LIB_DIR     "${LEAN_PREFIX}/lib/lean")
-set(PYLE_LEAN_RUNTIME_DIR "" CACHE PATH "Optional directory containing a compatible patched libleanshared")
+set(PYLE_LEAN_RUNTIME_DIR "$ENV{PYLE_LEAN_RUNTIME_DIR}" CACHE PATH "Optional directory containing a compatible patched libleanshared")
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 3) run lake build now
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 execute_process(
-  COMMAND lake --dir=${CMAKE_SOURCE_DIR} build
+  COMMAND "${LAKE_EXECUTABLE}" build
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
   RESULT_VARIABLE _lake_build_res
 )
@@ -74,13 +105,14 @@ add_library(cpyle STATIC
     lib/cache.cpp
     lib/utils.cpp
 )
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
 target_include_directories(cpyle PRIVATE
     ${LEAN_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/include
 )
 
 target_link_libraries(cpyle PRIVATE
+    Threads::Threads
     Pyle
     Init_shared
     leanshared_1
@@ -89,8 +121,8 @@ target_link_libraries(cpyle PRIVATE
 set_target_properties(cpyle PROPERTIES
     CXX_STANDARD 17
     CMAKE_CXX_STANDARD_REQUIRED TRUE
-    BUILD_RPATH "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
-    INSTALL_RPATH "${rpt};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
+    BUILD_RPATH "${rpt};${LEAN_LIB_DIR}"
+    INSTALL_RPATH "${rpt};${LEAN_LIB_DIR}"
 )
 
 # –––––––––––––––––––––––
@@ -99,6 +131,8 @@ set_target_properties(cpyle PROPERTIES
 pybind11_add_module(pyle
     lib/module.cpp
 )
+
+target_compile_definitions(pyle PRIVATE PYLE_LEAN_PREFIX="${LEAN_PREFIX}")
 
 target_include_directories(pyle PRIVATE
     ${LEAN_INCLUDE_DIR}
@@ -126,56 +160,52 @@ endif()
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # X) build the standalone binary
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
-find_package(jsoncpp REQUIRED)
-add_executable(pyle_bin
-    bin/main.cpp
-)
+if(PYLE_BUILD_CLI)
+    find_package(jsoncpp REQUIRED)
+    add_executable(pyle_bin
+        bin/main.cpp
+    )
 
-target_include_directories(pyle_bin PRIVATE
-    ${LEAN_INCLUDE_DIR}
-    ${Python3_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_link_libraries(pyle_bin PRIVATE
-    $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--no-as-needed>
-    $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:gcc_s>
-    $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--as-needed>
-    jsoncpp_lib
-    cpyle
-    Pyle
-    Init_shared
-    leanshared_1
-    leanshared
-)
+    target_include_directories(pyle_bin PRIVATE
+        ${LEAN_INCLUDE_DIR}
+        ${Python3_INCLUDE_DIRS}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(pyle_bin PRIVATE
+        $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--no-as-needed>
+        $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:gcc_s>
+        $<$<AND:$<PLATFORM_ID:Linux>,$<CXX_COMPILER_ID:GNU>>:-Wl,--as-needed>
+        jsoncpp_lib
+        cpyle
+        Pyle
+        Init_shared
+        leanshared_1
+        leanshared
+    )
 
 
-set_target_properties(pyle_bin PROPERTIES
-    CXX_STANDARD 17
-    CMAKE_CXX_STANDARD_REQUIRED TRUE
-    BUILD_WITH_INSTALL_RPATH ON
-    BUILD_RPATH "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR};${LAKE_LIB_DIR};${PYTHON_LIB_DIR}"
-    INSTALL_RPATH "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR};${LAKE_LIB_DIR};${PYTHON_LIB_DIR}"
-)
+    set_target_properties(pyle_bin PROPERTIES
+        CXX_STANDARD 17
+        CMAKE_CXX_STANDARD_REQUIRED TRUE
+        BUILD_WITH_INSTALL_RPATH ON
+        BUILD_RPATH "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR}"
+        INSTALL_RPATH "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR}"
+    )
 
-# Optionally install it:
-install(TARGETS pyle_bin DESTINATION .)
+endif()
 
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
 # 7) RPATH so runtime can find the .so files
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
-if(APPLE)
-    set(rpt "@loader_path")
-else()
-    set(rpt "$ORIGIN")
-endif()
+
 
 set_target_properties(pyle PROPERTIES
     CXX_STANDARD            17
     CMAKE_CXX_STANDARD_REQUIRED TRUE
     BUILD_WITH_INSTALL_RPATH ON
-    BUILD_RPATH             "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
-    INSTALL_RPATH           "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR};${LAKE_LIB_DIR}"
+    BUILD_RPATH             "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR}"
+    INSTALL_RPATH           "${rpt};${PYLE_LEAN_RUNTIME_DIR};${LEAN_LIB_DIR}"
 )
 
 # ––––––––––––––––––––––––––––––––––––––––––––––––––
@@ -185,7 +215,8 @@ if(PYLE_LEAN_RUNTIME_DIR AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     # `lake env` prepends the stock Lean directory to LD_LIBRARY_PATH. An
     # explicitly selected compatible runtime must take precedence over that.
     target_link_options(pyle PRIVATE "-Wl,--disable-new-dtags")
-    target_link_options(pyle_bin PRIVATE "-Wl,--disable-new-dtags")
+    if(PYLE_BUILD_CLI)
+        target_link_options(pyle_bin PRIVATE "-Wl,--disable-new-dtags")
+    endif()
 endif()
 install(TARGETS pyle DESTINATION .)
-install(FILES ${PYLELIB} DESTINATION .)
